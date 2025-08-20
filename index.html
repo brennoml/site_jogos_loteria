@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análise e Geração de Loterias</title>
+    <link rel="stylesheet" href="src/css/styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cleave.js/1.6.0/cleave.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script type="module" src="src/js/utils.js"></script>
+    <script type="module" src="src/js/validators.js"></script>
+    <script type="module" src="src/js/constants.js"></script>
+    <script type="module" src="src/js/interface.js"></script>
+    <script type="module" src="src/js/generate.js"></script>
+    <script type="module" src="src/js/analyze.js"></script>
+    <script type="module" src="src/js/main.js"></script>
+    <script type="module" src="src/js/printPdf.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Análise e Geração de Loterias</h1>
+
+        <!-- Seletor Global de Tipo de Jogo -->
+        <div class="form-group global-game-type-selector">
+            <label for="gameTypeGlobal">Tipo de Jogo:</label>
+            <select id="gameTypeGlobal" aria-label="Tipo de jogo global">
+                <option value="megasena">Mega-Sena</option>
+                <option value="quina" selected>Quina</option>
+                <option value="lotofacil">Lotofácil</option>
+            </select>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-button active" id="tab-geracao">Geração de Jogos</button>
+            <button class="tab-button" id="tab-analise">Análise de Jogos</button>
+            <button class="tab-button" id="tab-impressao">Impressão de Volantes</button>
+        </div>
+
+        <div id="geracao" class="tab-content active">
+            <h3>Configurações de Geração de Jogos</h3>
+            <div class="generate-config" id="generateConfig">
+                <div class="form-group">
+                    <div class="input-group">
+                        <label for="totalBolas">Total de Bolas no Globo:</label>
+                        <input type="number" id="totalBolas" class="number" value="80" aria-label="Total de bolas">
+                    </div>
+                    <div class="input-group">
+                        <input type="checkbox" id="bolasAleatorias" checked>
+                        <label for="bolasAleatorias">Usar Bolas Aleatórias</label>
+                    </div>
+                    <div class="input-group">
+                        <label for="qtdBolasAleatorias">Quantidade de Bolas para Seleção:</label>
+                        <input type="number" id="qtdBolasAleatorias" class="number" value="80" aria-label="Quantidade de bolas aleatórias para seleção">
+                    </div>
+                    <div class="input-group">
+                        <label for="dezenasSelecionadas">Dezenas Fixas (ex.: 1,2,3,4,5):</label>
+                        <input type="text" id="dezenasSelecionadas" aria-label="Dezenas fixas selecionadas" disabled>
+                    </div>
+                    <div class="input-group">
+                        <label for="dezenasJogadas">Dezenas por Jogo:</label>
+                        <input type="number" id="dezenasJogadas" class="number" value="5" aria-label="Dezenas por jogo">
+                    </div>
+                    <div class="input-group">
+                        <label for="acertosGarantidos">Acertos Garantidos (em N):</label>
+                        <input type="number" id="acertosGarantidos" class="number" value="3" aria-label="Acertos garantidos">
+                    </div>
+                     <div class="input-group">
+                        <label for="quantidadeJogos">Número de Jogos a Gerar:</label>
+                        <input type="text" id="quantidadeJogos" class="quantity" value="100" aria-label="Número de jogos a gerar">
+                    </div>
+                    <div class="input-group">
+                        <input type="checkbox" id="jogosSorteados">
+                        <label for="jogosSorteados">Usar Geração Aleatória (vs. Combinatória)</label>
+                    </div>
+                    <div class="input-group">
+                        <label for="maxTime">Tempo Máximo para Aleatória (segundos):</label>
+                        <input type="number" id="maxTime" class="number" value="30" aria-label="Tempo máximo em segundos para geração aleatória">
+                    </div>
+                    <div class="input-group">
+                        <input type="checkbox" id="aproveitaJogos">
+                        <label for="aproveitaJogos">Aproveitar Jogos Existentes</label>
+                    </div>
+                    <div class="input-group">
+                        <input type="checkbox" id="forcarUniversoOriginalParaNovos" disabled>
+                        <label for="forcarUniversoOriginalParaNovos">Forçar usar novas bolas aleatórias</label>
+                    </div>
+                    <div class="input-group">
+                        <label for="jogosExistentesFile">Arquivo de Jogos Existentes:</label>
+                        <input type="file" id="jogosExistentesFile" accept=".xlsx" aria-label="Arquivo de jogos existentes" disabled>
+                        <span id="jogosExistentesFileName" class="file-name-display"></span>
+                        
+                    </div>
+                </div>
+                <button id="btn-gerar-jogos">Gerar Jogos</button>
+                <div class="status" id="status-geracao" aria-live="polite"></div>
+                <div class="progress" id="progress-geracao" aria-live="polite"></div>
+                <div class="loader" id="loader-geracao" style="display: none;">Carregando...</div>
+            </div>
+            <button id="btn-parar-geracao" class="button-danger" style="display: none;">Parar Geração</button>
+        </div>
+
+        <div id="analise" class="tab-content">
+            <div id="megasenaInputs" class="prize-inputs">
+                <div class="input-group">
+                    <label for="megasenaCustoApostaAnalise">Custo da Aposta (Mega-Sena):</label>
+                    <input type="text" id="megasenaCustoApostaAnalise" class="currency" value="R$ 6,00" aria-label="Custo da aposta Mega-Sena">
+                </div>
+                <h3>Valores dos Prêmios (Mega-Sena)</h3>
+                <div class="input-group">
+                    <label for="megasenaQuadraAnalise">Quadra:</label>
+                    <input type="text" id="megasenaQuadraAnalise" class="currency" value="R$ 1.000,00" aria-label="Prêmio Quadra Mega-Sena">
+                </div>
+                <div class="input-group">
+                    <label for="megasenaQuinaAnalise">Quina:</label>
+                    <input type="text" id="megasenaQuinaAnalise" class="currency" value="R$ 80.000,00" aria-label="Prêmio Quina Mega-Sena">
+                </div>
+                <div class="input-group">
+                    <label for="megasenaSenaAnalise">Sena:</label>
+                    <input type="text" id="megasenaSenaAnalise" class="currency" value="R$ 50.000.000,00" aria-label="Prêmio Sena Mega-Sena">
+                </div>
+            </div>
+
+            <div id="quinaInputs" class="prize-inputs active">
+                <div class="input-group">
+                    <label for="quinaCustoApostaAnalise">Custo da Aposta (Quina):</label>
+                    <input type="text" id="quinaCustoApostaAnalise" class="currency" value="R$ 3,00" aria-label="Custo da aposta Quina">
+                </div>
+                <h3>Valores dos Prêmios (Quina)</h3>
+                <div class="input-group">
+                    <label for="quinaDuqueAnalise">Duque:</label>
+                    <input type="text" id="quinaDuqueAnalise" class="currency" value="R$ 4,00" aria-label="Prêmio Duque Quina">
+                </div>
+                <div class="input-group">
+                    <label for="quinaTernoAnalise">Terno:</label>
+                    <input type="text" id="quinaTernoAnalise" class="currency" value="R$ 120,00" aria-label="Prêmio Terno Quina">
+                </div>
+                <div class="input-group">
+                    <label for="quinaQuadraAnalise">Quadra:</label>
+                    <input type="text" id="quinaQuadraAnalise" class="currency" value="R$ 10.000,00" aria-label="Prêmio Quadra Quina">
+                </div>
+                <div class="input-group">
+                    <label for="quinaQuinaAnalise">Quina:</label>
+                    <input type="text" id="quinaQuinaAnalise" class="currency" value="R$ 230.000.000,00" aria-label="Prêmio Quina Quina">
+                </div>
+            </div>
+
+            <div id="lotofacilInputs" class="prize-inputs" style="display:none;">
+                <div class="input-group">
+                    <label for="lotofacilCustoApostaAnalise">Custo da Aposta (Lotofácil):</label>
+                    <input type="text" id="lotofacilCustoApostaAnalise" class="currency" value="R$ 3,50" aria-label="Custo da aposta Lotofácil">
+                </div>
+                <h3>Valores dos Prêmios (Lotofácil)</h3>
+                <div class="input-group">
+                    <label for="lotofacilOnzeAnalise">11 acertos:</label>
+                    <input type="text" id="lotofacilOnzeAnalise" class="currency" value="R$ 7,00" aria-label="Prêmio 11 acertos Lotofácil">
+                </div>
+                <div class="input-group">
+                    <label for="lotofacilDozeAnalise">12 acertos:</label>
+                    <input type="text" id="lotofacilDozeAnalise" class="currency" value="R$ 14,00" aria-label="Prêmio 12 acertos Lotofácil">
+                </div>
+                <div class="input-group">
+                    <label for="lotofacilTrezeAnalise">13 acertos:</label>
+                    <input type="text" id="lotofacilTrezeAnalise" class="currency" value="R$ 35,00" aria-label="Prêmio 13 acertos Lotofácil">
+                </div>
+                <div class="input-group">
+                    <label for="lotofacilQuatorzeAnalise">14 acertos:</label>
+                    <input type="text" id="lotofacilQuatorzeAnalise" class="currency" value="R$ 2000,00" aria-label="Prêmio 14 acertos Lotofácil">
+                </div>
+                <div class="input-group">
+                    <label for="lotofacilQuinzeAnalise">15 acertos:</label>
+                    <input type="text" id="lotofacilQuinzeAnalise" class="currency" value="R$ 1.000.000,00" aria-label="Prêmio 15 acertos Lotofácil">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="userFileAnalise">Arquivo dos Seus Jogos:</label>
+                <input type="file" id="userFileAnalise" accept=".xlsx" aria-label="Arquivo dos seus jogos">
+                <span id="userFileAnaliseName" class="file-name-display"></span>
+            </div>
+
+            <button id="btn-gerar-relatorio">Gerar Relatório</button>
+            <div class="status" id="status-analise" aria-live="polite"></div>
+            <div class="progress" id="progress-analise" aria-live="polite"></div>
+            <div class="loader" id="loader-analise" style="display: none;">Carregando...</div>
+        </div>
+        <div id="impressao" class="tab-content">
+            <h3>Configurações de Impressão de Volantes em PDF (mm)</h3>
+            <div class="print-config" id="printConfig">
+                <div class="form-group">
+                    <label for="pdfGameFile">Arquivo Excel com Jogos:</label>
+                    <input type="file" id="pdfGameFile" accept=".xlsx" aria-label="Arquivo Excel com os jogos para impressão">
+                    <span id="pdfGameFileName" class="file-name-display"></span>
+                </div>
+                <h4>Dimensões e Margens do Volante (mm)</h4>
+                <div class="input-group">
+                    <label for="pdfPageWidthMm">Largura do Volante:</label>
+                    <input type="text" id="pdfPageWidthMm" class="number-2dp" value="81" aria-label="Largura da página em mm">
+                </div>
+                <div class="input-group">
+                    <label for="pdfPageHeightMm">Altura do Volante:</label>
+                    <input type="text" id="pdfPageHeightMm" class="number-2dp" value="186" aria-label="Altura da página em mm">
+                </div>
+                <div class="input-group">
+                    <label for="pdfMarginMm">Margem:</label>
+                    <input type="text" id="pdfMarginMm" class="number-2dp" value="0" aria-label="Margem em mm">
+                </div>
+
+                <h4>Posicionamento da Grade de Marcação (mm)</h4>
+                <div class="input-group">
+                    <label for="pdfStartXMm">Distância da Margem Esquerda:</label>
+                    <input type="text" id="pdfStartXMm" class="number-2dp" value="10,4" aria-label="Posição X inicial da grade em mm">
+                </div>
+                <div class="input-group">
+                    <label for="pdfFirstGameYFromTopMm">Distância da Margem Superior:</label>
+                    <input type="text" id="pdfFirstGameYFromTopMm" class="number-2dp" value="66" aria-label="Posição Y inicial do primeiro jogo em mm">
+                </div>
+
+                <h4>Dimensões da Célula de Marcação (mm)</h4>
+                <div class="input-group">
+                    <label for="pdfCellWidthMm">Largura da Célula:</label>
+                    <input type="text" id="pdfCellWidthMm" class="number-2dp" value="6,34" aria-label="Largura da célula em mm">
+                </div>
+                <div class="input-group">
+                    <label for="pdfCellHeightMm">Altura da Célula:</label>
+                    <input type="text" id="pdfCellHeightMm" class="number-2dp" value="3,28" aria-label="Altura da célula em mm">
+                </div>
+                <div class="input-group">
+                    <label for="pdfBorderWidthMm">Borda Interna X (Marcação):</label>
+                    <input type="text" id="pdfBorderWidthMm" class="number-2dp" value="1,1" aria-label="Borda interna horizontal da marcação em mm">
+                </div>
+                <div class="input-group">
+                    <label for="pdfBorderHeightMm">Borda Interna Y (Marcação):</label>
+                    <input type="text" id="pdfBorderHeightMm" class="number-2dp" value="0,6" aria-label="Borda interna vertical da marcação em mm">
+                </div>
+                <h4>Espaçamentos Diversos (mm)</h4>
+                <div class="input-group">
+                    <label for="pdfDistanceBetweenGamesMm">Distância Vertical entre Jogos:</label>
+                    <input type="text" id="pdfDistanceBetweenGamesMm" class="number-2dp" value="6,7" aria-label="Distância entre jogos em mm">
+                </div>
+                <div class="input-group">
+                    <label for="pdfAfterGameOffsetMm">Distância do final da marcação dos jogos até marcação de quantidade de dezenas:</label>
+                    <input type="text" id="pdfAfterGameOffsetMm" class="number-2dp" value="9" aria-label="Offset Y para marcação de dezenas jogadas em mm">
+                </div>
+                <div class="input-group">
+                    <label for="pdfBolaoOffsetMm">Distância do final da marcação dos jogos até a marcação quantidade de Cotas:</label>
+                    <input type="text" id="pdfBolaoOffsetMm" class="number-2dp" value="28,4" aria-label="Offset Y para marcação de cotas do bolão em mm">
+                </div>
+                <h4>Configuração de Cotas</h4>
+                <div class="input-group">
+                    <label for="pdfDefaultCotas">Quantidade de Cotas a ser impressa:</label>
+                    <input type="number" id="pdfDefaultCotas" class="number" value="0" aria-label="Número de cotas padrão para o bolão">
+                </div>
+                <div class="input-group">
+                    <input type="checkbox" id="pdfReadCotasFromExcel"> <!-- unchecked by default if not specified -->
+                    <label for="pdfReadCotasFromExcel">Ler Cotas da Primeira Coluna do Excel</label>
+                </div>
+
+                <h4>Posicionamento do Número do Volante (mm)</h4>
+                 <div class="input-group">
+                    <label for="pdfPageNumberXOffsetMm">Distância da Margem Esquerda:</label>
+                    <input type="text" id="pdfPageNumberXOffsetMm" class="number-2dp" value="25" step="0.01" aria-label="Posição X do número da página em mm">
+                </div>
+                <div class="input-group">
+                    <label for="pdfPageNumberYOffsetMm">Distância da Margem Inferior:</label>
+                    <input type="text" id="pdfPageNumberYOffsetMm" class="number-2dp" value="15,5" step="0.01" aria-label="Posição Y do número da página em mm">
+                </div>
+
+                <h4>Posicionamento das Dezenas Impressas (Rodapé, mm)</h4>
+                <div class="input-group">
+                    <label for="pdfGamesNumbersXOffsetMm">Distância da Margem Esquerda:</label>
+                    <input type="text" id="pdfGamesNumbersXOffsetMm" class="number-2dp" value="15" aria-label="Posição X dos números dos jogos em mm">
+                </div>
+                 <div class="input-group">
+                    <label for="pdfGamesNumbersYOffsetMm">Distância da Margem Inferior:</label>
+                    <input type="text" id="pdfGamesNumbersYOffsetMm" class="number-2dp" value="7" aria-label="Posição Y dos números dos jogos em mm">
+                </div>
+                <div class="input-group">
+                    <label for="pdfGamesNumbersLineSpacingMm">Espaçamento entre linhas das dezenas dos jogos:</label>
+                    <input type="text" id="pdfGamesNumbersLineSpacingMm" class="number-2dp" value="4" aria-label="Espaçamento entre linhas dos números dos jogos em mm">
+                </div>
+
+                <h4>Imagem de Fundo (Opcional)</h4>
+                <div class="input-group">
+                    <input type="checkbox" id="pdfPrintBackgroundImage">
+                    <label for="pdfPrintBackgroundImage">Imprimir Imagem de Fundo no Volante</label>
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfBackgroundImageFile">Arquivo da Imagem de Fundo:</label>
+                    <input type="file" id="pdfBackgroundImageFile" accept="image/jpeg, image/png" aria-label="Arquivo da imagem de fundo para o volante" disabled>
+                    <span id="pdfBackgroundImageFileName" class="file-name-display"></span>
+                </div>
+
+            </div>
+            <!-- NOVOS CONTROLES DE CONFIGURAÇÃO -->
+            <div class="config-management-group">
+                <button id="btn-salvar-config-padrao" type="button">Salvar como Padrão</button>
+                <button id="btn-salvar-config-arquivo" type="button">Salvar em Arquivo</button>
+                <input type="text" id="nome-config-personalizada" placeholder="Nome da configuração" aria-label="Nome da configuração personalizada">
+                <select id="combo-configs-salvas" aria-label="Configurações salvas">
+                    <option value="">Selecione uma configuração salva...</option>
+                </select>
+                <button id="btn-carregar-config" type="button">Carregar Selecionada</button>
+            </div>
+
+            <button id="btn-gerar-pdf-volantes">Gerar PDF com Volantes para Impressão</button>
+            <div class="status" id="status-impressao" aria-live="polite"></div>
+            <div class="loader" id="loader-impressao" style="display: none;">Carregando...</div>
+        </div>
+    </div>
+    <script>
+    // Exibe os inputs de prêmios corretos conforme o tipo de jogo selecionado
+    function atualizarVisibilidadePremiosAnalise() {
+        const tipo = document.getElementById('gameTypeGlobal').value;
+        document.getElementById('megasenaInputs').style.display = (tipo === 'megasena') ? '' : 'none';
+        document.getElementById('quinaInputs').style.display = (tipo === 'quina') ? '' : 'none';
+        document.getElementById('lotofacilInputs').style.display = (tipo === 'lotofacil') ? '' : 'none';
+    }
+    document.getElementById('gameTypeGlobal').addEventListener('change', atualizarVisibilidadePremiosAnalise);
+    atualizarVisibilidadePremiosAnalise();
+    </script>
+</body>
+</html>
