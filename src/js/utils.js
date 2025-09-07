@@ -58,98 +58,38 @@ function randomChoice(arr, weights, size, replace = false) {
         return fallbackResult;
     }
 
+    // Sempre opera em cópia para ser mais seguro
+    const arrCopyInternal = [...arr];
+    const weightsCopyInternal = [...weights];
+    let totalWeightInternal = weightsCopyInternal.reduce((a, b) => a + b, 0);
+    const resultInternal = [];
 
-    const result = [];
-    const currentArr = replace ? [...arr] : arr; // Se replace=true, podemos modificar a cópia original dos pesos
-    const currentWeights = [...weights];
-    
-    let totalWeight = currentWeights.reduce((a, b) => a + b, 0);
-
-    for (let i = 0; i < size; i++) {
-        if (currentArr.length === 0 || totalWeight <= 0) break; // Não há mais itens ou pesos
-
-        const r = Math.random() * totalWeight;
-        let accumulatedWeight = 0;
-        let chosenIndex = -1;
-
-        for (let j = 0; j < currentArr.length; j++) {
-            accumulatedWeight += currentWeights[j];
-            if (r <= accumulatedWeight) {
-                chosenIndex = j;
+    for (let k_loop = 0; k_loop < size; k_loop++) {
+        if (arrCopyInternal.length === 0 || totalWeightInternal <= 0) break;
+        const r_internal = Math.random() * totalWeightInternal;
+        let acc_internal = 0;
+        let idx_internal = -1;
+        for (let j_loop = 0; j_loop < arrCopyInternal.length; j_loop++) {
+            acc_internal += weightsCopyInternal[j_loop];
+            if (r_internal <= acc_internal) {
+                idx_internal = j_loop;
                 break;
             }
         }
-        
-        // Fallback caso algo dê errado com a soma dos pesos (ex: NaN, pesos negativos)
-        if (chosenIndex === -1 && currentArr.length > 0) {
-            chosenIndex = Math.floor(Math.random() * currentArr.length);
+        if (idx_internal === -1 && arrCopyInternal.length > 0) { // Fallback
+            idx_internal = Math.floor(Math.random() * arrCopyInternal.length);
         }
 
-
-        if (chosenIndex !== -1) {
-            result.push(currentArr[chosenIndex]);
+        if (idx_internal !== -1) {
+            resultInternal.push(arrCopyInternal[idx_internal]);
             if (!replace) {
-                totalWeight -= currentWeights[chosenIndex];
-                // Remove o elemento escolhido de currentArr e currentWeights para evitar que seja escolhido novamente
-                // Como currentArr é uma referência ao original (se !replace), precisamos ter cuidado
-                // É mais seguro trabalhar com cópias se a modificação do array original não for desejada externamente.
-                // Para o contexto deste app, a função generate.js cria cópias ou lida com isso.
-                // Aqui, se !replace, vamos assumir que quem chama espera que os arrays sejam modificados,
-                // ou que passou cópias.
-                // Melhoria: Se !replace, criar cópias internas para evitar efeitos colaterais no array original.
-                // Para este caso, vamos manter o comportamento de modificar a cópia, se `arr` for uma cópia.
-                
-                // Se `arr` e `weights` são passados como cópias para esta função, está ok.
-                // Se `arr` e `weights` são os originais, isso os modificaria.
-                // A implementação em generate.js usa `dezenasParaTrabalhar` (cópia) e `calcularPesos()` (nova array de pesos).
-                
-                // A forma mais segura se !replace seria:
-                // const chosenItem = currentArr.splice(chosenIndex, 1)[0];
-                // currentWeights.splice(chosenIndex, 1);
-                // Mas isso modifica currentArr, que pode ser o `arr` original.
-                // Para manter o `arr` original intacto, a lógica de remoção deve ser mais complexa ou
-                // a função deve sempre operar sobre cópias se `replace` for `false`.
-                // A implementação atual em `generate.js` já passa cópias ou arrays recalculadas,
-                // então `currentArr.splice` e `currentWeights.splice` seria ok.
-
-                // Vamos refatorar para ser mais seguro caso `arr` não seja uma cópia:
-                const arrCopyInternal = replace ? [...arr] : [...arr]; // Sempre opera em cópia se !replace
-                const weightsCopyInternal = [...weights];
-                let totalWeightInternal = weightsCopyInternal.reduce((a, b) => a + b, 0);
-                const resultInternal = [];
-
-                for (let k_loop = 0; k_loop < size; k_loop++) {
-                    if (arrCopyInternal.length === 0 || totalWeightInternal <= 0) break;
-                    const r_internal = Math.random() * totalWeightInternal;
-                    let acc_internal = 0;
-                    let idx_internal = -1;
-                    for (let j_loop = 0; j_loop < arrCopyInternal.length; j_loop++) {
-                        acc_internal += weightsCopyInternal[j_loop];
-                        if (r_internal <= acc_internal) {
-                            idx_internal = j_loop;
-                            break;
-                        }
-                    }
-                    if (idx_internal === -1 && arrCopyInternal.length > 0) { // Fallback
-                        idx_internal = Math.floor(Math.random() * arrCopyInternal.length);
-                    }
-
-                    if (idx_internal !== -1) {
-                        resultInternal.push(arrCopyInternal[idx_internal]);
-                        if (!replace) {
-                            totalWeightInternal -= weightsCopyInternal[idx_internal];
-                            arrCopyInternal.splice(idx_internal, 1);
-                            weightsCopyInternal.splice(idx_internal, 1);
-                        }
-                    }
-                }
-                return resultInternal; // Retorna a versão segura
+                totalWeightInternal -= weightsCopyInternal[idx_internal];
+                arrCopyInternal.splice(idx_internal, 1);
+                weightsCopyInternal.splice(idx_internal, 1);
             }
         }
     }
-    // Este return abaixo é para o caso de replace=true, onde o loop original faria sentido.
-    // Contudo, a refatoração acima já cobre ambos os casos de forma mais segura.
-    return result; 
+    return resultInternal;
 }
 
 

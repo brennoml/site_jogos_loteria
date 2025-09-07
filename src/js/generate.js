@@ -257,9 +257,11 @@ async function generateGames() {
     try {
         console.log('Coletando configurações do formulário...');
         const rawQuantidadeJogos = document.getElementById('quantidadeJogos').value;
-        const tipoJogo = document.getElementById('gameTypeGlobal')?.value || 'quina';
+        const tipoJogo = document.getElementById('gameTypeGlobal')?.value || 'megasena';
         let defaults = GAME_DEFAULTS;
-        if (tipoJogo === 'lotofacil' && GAME_DEFAULTS.lotofacil) {
+        if (tipoJogo === 'quina' && GAME_DEFAULTS.quina) {
+            defaults = GAME_DEFAULTS.quina;
+        } else if (tipoJogo === 'lotofacil' && GAME_DEFAULTS.lotofacil) {
             defaults = GAME_DEFAULTS.lotofacil;
         }
         const config = {
@@ -368,8 +370,11 @@ async function generateGames() {
         ws['!cols'] = Array(config.dezenasJogadas).fill({ wch: 10 });
         XLSX.utils.book_append_sheet(wb, ws, 'Jogos Gerados');
         
-        const tipoJogoNome = config.dezenasJogadas === 6 ? 'MegaSena' : (config.dezenasJogadas === 5 ? 'Quina' : `Custom${config.dezenasJogadas}dz`);
-        XLSX.writeFile(wb, `Jogos_${tipoJogoNome}_${jogos.length}x${config.dezenasJogadas}dz_Garant${config.acertosGarantidos}.xlsx`);
+        // Novo padrão de nome do arquivo mais descritivo
+        const qtdBolasUsadas = config.bolasAleatorias ? config.qtdBolasSelecionadas : config.dezenasSelecionadas.length;
+        const nomeArquivo = `${jogos.length} jogos de ${config.dezenasJogadas} dezenas com ${qtdBolasUsadas} de ${config.totalBolas} bolas sem repetir ${config.acertosGarantidos} dez.xlsx`;
+        
+        XLSX.writeFile(wb, nomeArquivo);
 
         if (!window.stopGenerationRequested) {
             status.textContent = `Concluído: ${jogos.length} jogos gerados! O download deve iniciar em breve.`;

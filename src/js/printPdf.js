@@ -337,8 +337,8 @@ function drawPageNumberOnPdf(doc, pageNumber, config) {
     //const posY = mmToPoints(172 - config.marginMm);
     const posY = mmToPoints(config.pageHeightMm - config.pageNumberYOffsetMm);
 
-    doc.setFont("Verdana-Bold");
-    doc.setFontSize(16);
+    doc.setFont("Verdana-ExtraBold");
+    doc.setFontSize(18);
     doc.setTextColor(0, 0, 0); // Preto
     doc.text(String(pageNumber), pdfGamesNumbersXOffsetMm, posY);
 }
@@ -359,11 +359,11 @@ function drawGamesNumbersOnPdf(doc, gamesOnPage, config, pdfPageHeightPoints) {
     const lineSpacingPoints = mmToPoints(config.gamesNumbersLineSpacingMm);
 
     doc.setFont("Verdana-ExtraBold");
-    doc.setFontSize(11); // 10pt font size (as in Python)
+    doc.setFontSize(10); // 10pt font size (as in Python)
     doc.setTextColor(0, 0, 0); // Preto
 
     gamesOnPage.forEach((jogo, index) => {
-        const jogoNumeros = jogo.map(num => String(num).padStart(2, '0')).join('-');
+        const jogoNumeros = jogo.map(num => String(num).padStart(2, '0')).join('.');
         const posY = startYPoints + (index * lineSpacingPoints);
         doc.text(jogoNumeros, startXPoints, posY);
     });

@@ -1,10 +1,19 @@
 export const GAME_DEFAULTS = {
-    totalBolas: 80, // Padrão Quina
-    qtdBolasSelecionadas: 80, // Padrão Quina
+    totalBolas: 60, // Padrão Mega-Sena
+    qtdBolasSelecionadas: 60, // Padrão Mega-Sena
     maxTime: 30,
-    dezenasJogadas: 5, // Padrão Quina
-    acertosGarantidos: 3, // Padrão Quina
+    dezenasJogadas: 6, // Padrão Mega-Sena
+    acertosGarantidos: 4, // Padrão Mega-Sena
     quantidadeJogos: 100,
+    // Quina (usado apenas se selecionado)
+    quina: {
+        totalBolas: 80,
+        qtdBolasSelecionadas: 80,
+        dezenasJogadas: 5,
+        acertosGarantidos: 3,
+        quantidadeJogos: 100,
+        maxTime: 30
+    },
     // Lotofácil (usado apenas se selecionado)
     lotofacil: {
         totalBolas: 25,

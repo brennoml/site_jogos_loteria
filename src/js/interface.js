@@ -2,6 +2,8 @@
  * Inicializa a interface do usuário.
  */
 function initializeInterface() {
+    console.log('Inicializando interface...');
+    
     // Formatar inputs de moeda
     document.querySelectorAll('.currency').forEach(input => {
         new Cleave(input, {
@@ -15,8 +17,13 @@ function initializeInterface() {
         });
     });
 
-    // Formatar inputs numéricos (sem separadores)
+    // Formatar inputs numéricos (sem separadores) - limitado a 3 dígitos por padrão
     document.querySelectorAll('.number').forEach(input => {
+        // Pular campos de eixo do gráfico que precisam de mais dígitos
+        if (input.id === 'graficoEixoXMin' || input.id === 'graficoEixoXMax') {
+            return; // Não aplicar formatação Cleave para esses campos
+        }
+        
         new Cleave(input, {
             numeral: true,
             numeralDecimalScale: 0,
@@ -49,8 +56,76 @@ function initializeInterface() {
         });
     });
 
+    // Configurar validação manual para campos de eixo X do gráfico (agora para percentuais)
+    const axisXInputs = document.querySelectorAll('#graficoEixoXMin, #graficoEixoXMax');
+    axisXInputs.forEach(input => {
+        input.addEventListener('input', function(e) {
+            // Permite números decimais para percentuais
+            let value = e.target.value.replace(/[^0-9.,]/g, '');
+            // Substitui vírgula por ponto para validação
+            value = value.replace(',', '.');
+            // Valida o range de 0 a 100
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue)) {
+                if (numValue < 0) value = '0';
+                if (numValue > 100) value = '100';
+            }
+            e.target.value = value;
+        });
+        
+        // Permitir números e vírgulas/pontos
+        input.addEventListener('keypress', function(e) {
+            if (!/[0-9.,]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Enter', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+    });
+
+    // Configurar event listeners para controles de estado
+    setupGenerationControls();
+    
     // Inicializa com base no tipo de jogo global selecionado
     handleGlobalGameTypeChange();
+    
+    console.log('Interface inicializada com sucesso');
+}
+
+/**
+ * Configura os event listeners para os controles de geração.
+ */
+function setupGenerationControls() {
+    console.log('Configurando controles de geração...');
+    
+    // Controles de geração
+    const generationControls = [
+        'bolasAleatorias',
+        'aproveitaJogos', 
+        'jogosSorteados',
+        'forcarUniversoOriginalParaNovos',
+        'dezenasJogadas'
+    ];
+
+    generationControls.forEach(controlId => {
+        const control = document.getElementById(controlId);
+        if (control) {
+            control.addEventListener('change', updateGenerationInputsState);
+            console.log(`Event listener configurado para ${controlId}`);
+        } else {
+            console.warn(`Controle ${controlId} não encontrado`);
+        }
+    });
+
+    // Listener específico para arquivo de jogos existentes
+    const jogosExistentesFileInput = document.getElementById('jogosExistentesFile');
+    if (jogosExistentesFileInput) {
+        jogosExistentesFileInput.addEventListener('change', function(e) {
+            const fileNameDisplay = document.getElementById('jogosExistentesFileName');
+            if (fileNameDisplay) {
+                fileNameDisplay.textContent = e.target.files.length > 0 ? e.target.files[0].name : '';
+            }
+        });
+        console.log('Event listener configurado para jogosExistentesFile');
+    }
 }
 
 /**
@@ -69,12 +144,12 @@ function setGenerationDefaults(gameType) {
         return;
     }
 
-    if (gameType === 'megasena') {
-        totalBolasInput.value = 60;
-        dezenasJogadasInput.value = 6;
-        acertosGarantidosInput.value = 4;
+    if (gameType === 'quina') {
+        totalBolasInput.value = 80;
+        dezenasJogadasInput.value = 5;
+        acertosGarantidosInput.value = 3;
         if (bolasAleatoriasCheckbox.checked) {
-            qtdBolasAleatoriasInput.value = 60;
+            qtdBolasAleatoriasInput.value = 80;
         }
     } else if (gameType === 'lotofacil') {
         totalBolasInput.value = 25;
@@ -83,12 +158,12 @@ function setGenerationDefaults(gameType) {
         if (bolasAleatoriasCheckbox.checked) {
             qtdBolasAleatoriasInput.value = 25;
         }
-    } else { // Quina ou default
-        totalBolasInput.value = 80;
-        dezenasJogadasInput.value = 5;
-        acertosGarantidosInput.value = 3;
+    } else { // Mega-Sena ou default
+        totalBolasInput.value = 60;
+        dezenasJogadasInput.value = 6;
+        acertosGarantidosInput.value = 4;
         if (bolasAleatoriasCheckbox.checked) {
-            qtdBolasAleatoriasInput.value = 80;
+            qtdBolasAleatoriasInput.value = 60;
         }
     }
     // Após definir os valores, é importante atualizar o estado dos inputs (disabled/enabled)
@@ -223,8 +298,15 @@ function handleGlobalGameTypeChange() {
     }
     const selectedGame = gameTypeSelect.value;
 
-    updateAnalysisPrizeInputs(selectedGame);
-    setGenerationDefaults(selectedGame);
+    console.log('Mudando tipo de jogo para:', selectedGame);
+    
+    try {
+        updateAnalysisPrizeInputs(selectedGame);
+        setGenerationDefaults(selectedGame);
+        console.log('Configurações do tipo de jogo atualizadas com sucesso');
+    } catch (error) {
+        console.error('Erro ao atualizar configurações:', error);
+    }
 }
 
 /**
@@ -241,48 +323,96 @@ function updateGenerationInputsState() {
     const maxTimeInput = document.getElementById('maxTime');
     const jogosSorteadosCheckbox = document.getElementById('jogosSorteados');
 
-    // Pode ser que esses elementos não existam se a aba de Geração não estiver ativa/montada
-    // Adicionar verificações para evitar erros no console se os elementos não forem encontrados
     if (!bolasAleatoriasCheckbox || !dezenasSelecionadasInput || !qtdBolasAleatoriasInput || 
         !aproveitaJogosCheckbox || !jogosExistentesFileInput || !forcarUniversoOriginalCheckbox || 
         !maxTimeInput || !jogosSorteadosCheckbox) {
-        // console.warn("Um ou mais elementos da aba de geração não foram encontrados. Estado dos inputs não atualizado.");
+        console.warn("Alguns elementos de controle não foram encontrados para atualizar estado.");
         return;
     }
 
     if (bolasAleatoriasCheckbox.checked) {
         dezenasSelecionadasInput.disabled = true;
-        dezenasSelecionadasInput.style.backgroundColor = '#e9ecef';
-        dezenasSelecionadasInput.value = ''; // Limpa o campo
+        dezenasSelecionadasInput.value = '';
         qtdBolasAleatoriasInput.disabled = false;
-        qtdBolasAleatoriasInput.style.backgroundColor = '';
     } else {
         dezenasSelecionadasInput.disabled = false;
-        dezenasSelecionadasInput.style.backgroundColor = '';
         qtdBolasAleatoriasInput.disabled = true;
-        qtdBolasAleatoriasInput.style.backgroundColor = '#e9ecef';
-        // qtdBolasAleatoriasInput.value = ''; // Não limpar, pode ser útil manter para alternar
     }
 
     jogosExistentesFileInput.disabled = !aproveitaJogosCheckbox.checked;
-    jogosExistentesFileInput.style.backgroundColor = aproveitaJogosCheckbox.checked ? '' : '#e9ecef';
     if (!aproveitaJogosCheckbox.checked) {
-        jogosExistentesFileInput.value = ''; // Limpa o arquivo selecionado se desmarcado
+        jogosExistentesFileInput.value = '';
         const fileNameDisplay = document.getElementById('jogosExistentesFileName');
         if(fileNameDisplay) fileNameDisplay.textContent = '';
     }
 
     forcarUniversoOriginalCheckbox.disabled = !aproveitaJogosCheckbox.checked;
     if (!aproveitaJogosCheckbox.checked) {
-        forcarUniversoOriginalCheckbox.checked = false; // Desmarca se "Aproveitar Jogos" for desmarcado
+        forcarUniversoOriginalCheckbox.checked = false;
     }
-
     
     maxTimeInput.disabled = !jogosSorteadosCheckbox.checked;
-    maxTimeInput.style.backgroundColor = jogosSorteadosCheckbox.checked ? '' : '#e9ecef';
+    
+    // Aplica estilos visuais para campos desabilitados
+    const disabledInputs = [dezenasSelecionadasInput, qtdBolasAleatoriasInput, jogosExistentesFileInput, maxTimeInput];
+    disabledInputs.forEach(input => {
+        if (input) {
+            if (input.disabled) {
+                input.style.backgroundColor = '#f1f5f9';
+                input.style.color = '#9ca3af';
+            } else {
+                input.style.backgroundColor = '';
+                input.style.color = '';
+            }
+        }
+    });
+}
 
-    // A lógica de presets baseada em dezenasJogadas foi movida para setGenerationDefaults
-    // para ser controlada pelo seletor global de tipo de jogo.
+
+/**
+ * Função para inicializar eventos e estados da interface.
+ */
+function initInterface() {
+    // Inicializa a interface do usuário
+    initializeInterface();
+
+    // Adiciona listener para mudança no tipo de jogo global
+    const gameTypeSelect = document.getElementById('gameTypeGlobal');
+    if (gameTypeSelect) {
+        gameTypeSelect.addEventListener('change', handleGlobalGameTypeChange);
+    }
+
+    // Adiciona listener para o checkbox de "Aproveitar Jogos"
+    const aproveitaJogosCheckbox = document.getElementById('aproveitaJogos');
+    if (aproveitaJogosCheckbox) {
+        aproveitaJogosCheckbox.addEventListener('change', updateGenerationInputsState);
+    }
+
+    // Adiciona listener para o checkbox de "Bolas Aleatórias"
+    const bolasAleatoriasCheckbox = document.getElementById('bolasAleatorias');
+    if (bolasAleatoriasCheckbox) {
+        bolasAleatoriasCheckbox.addEventListener('change', updateGenerationInputsState);
+    }
+
+    // Adiciona listener para o checkbox de "Jogos Sorteados"
+    const jogosSorteadosCheckbox = document.getElementById('jogosSorteados');
+    if (jogosSorteadosCheckbox) {
+        jogosSorteadosCheckbox.addEventListener('change', updateGenerationInputsState);
+    }
+
+    // Adiciona listener para o input de arquivo de jogos existentes
+    const jogosExistentesFileInput = document.getElementById('jogosExistentesFile');
+    if (jogosExistentesFileInput) {
+        jogosExistentesFileInput.addEventListener('change', function(e) {
+            const fileNameDisplay = document.getElementById('jogosExistentesFileName');
+            if (fileNameDisplay) {
+                fileNameDisplay.textContent = e.target.files.length > 0 ? e.target.files[0].name : '';
+            }
+        });
+    }
+
+    // Inicializa o estado da interface com os valores padrão
+    handleGlobalGameTypeChange();
 }
 
 
