@@ -1,20 +1,5 @@
-// Função local para parsear números brasileiros (cópia da validators.js)
-function parseBrazilianNumber(value) {
-    if (typeof value !== 'string' || !value) return NaN;
-    
-    const cleaned = value
-        .replace(/\s*R\$\s*/g, '')
-        .replace(/\./g, (match, offset, fullString) => {
-            if (fullString.indexOf(',') !== -1) {
-                return '';
-            }
-            return '';
-        })
-        .replace(',', '.');
-
-    const number = parseFloat(cleaned);
-    return number;
-}
+import { parseBrazilianNumber } from './validators.js';
+import { randomChoice } from './utils.js';
 
 // Constantes locais de prêmios padrão (cópia da constants.js)
 const PRIZE_DEFAULTS = {
@@ -38,12 +23,47 @@ const PRIZE_DEFAULTS = {
     }
 };
 
+// Configurações de jogo para os gráficos, similar ao analyze.js
+const GAME_CHART_CONFIG = {
+    megasena: {
+        expectedNumbers: 6,
+        maxBalls: 60,
+        prizeTiers: [
+            { key: 'quadra', hits: 4 },
+            { key: 'quina', hits: 5 },
+            { key: 'sena', hits: 6 }
+        ]
+    },
+    quina: {
+        expectedNumbers: 5,
+        maxBalls: 80,
+        prizeTiers: [
+            { key: 'duque', hits: 2 },
+            { key: 'terno', hits: 3 },
+            { key: 'quadra', hits: 4 },
+            { key: 'quina', hits: 5 }
+        ]
+    },
+    lotofacil: {
+        expectedNumbers: 15,
+        maxBalls: 25,
+        prizeTiers: [
+            { key: 'onze', hits: 11 }, { key: 'doze', hits: 12 }, { key: 'treze', hits: 13 },
+            { key: 'quatorze', hits: 14 }, { key: 'quinze', hits: 15 }
+        ]
+    }
+};
+
 // Variável global para armazenar a instância do gráfico atual
 let currentChart = null;
 let currentChartData = null;
 
 /**
- * Lê jogos de um arquivo Excel.
+ * Lê jogos de um arquivo Excel para análise gráfica
+ * @param {File} file - Arquivo Excel contendo os jogos
+ * @param {number} numerosEsperados - Quantidade esperada de números por jogo (não utilizado)
+ * @param {number} maxBalls - Valor máximo válido para as bolas
+ * @returns {Promise<Array<Array<number>>>} Array de jogos válidos
  */
 async function readGamesFromFile(file, numerosEsperados, maxBalls) {
     try {
@@ -65,63 +85,22 @@ async function readGamesFromFile(file, numerosEsperados, maxBalls) {
 }
 
 /**
- * Carrega os resultados históricos para análise.
- */
-async function loadHistoricalResults(tipoJogo) {
-    const nomeArquivo = tipoJogo === 'quina' ? 'jogos_quina_passados.xlsx' :
-        (tipoJogo === 'lotofacil' ? 'jogos_lotofacil_passados.xlsx' : 'jogos_megasena_passados.xlsx');
-
-    try {
-        const response = await fetch(nomeArquivo);
-        if (!response.ok) {
-            throw new Error(`Arquivo histórico "${nomeArquivo}" não encontrado.`);
-        }
-
-        const data = await response.arrayBuffer();
-        const workbook = XLSX.read(data, { type: 'array' });
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
-
-        const numerosEsperados = tipoJogo === 'quina' ? 5 : (tipoJogo === 'lotofacil' ? 15 : 6);
-        const maxBalls = tipoJogo === 'quina' ? 80 : (tipoJogo === 'lotofacil' ? 25 : 60);
-
-        return jsonData
-            .map(row => row.filter(num => num !== null && !isNaN(Number(num)) && 
-                Number.isInteger(Number(num)) && Number(num) >= 1 && Number(num) <= maxBalls).map(Number))
-            .filter(row => row.length === numerosEsperados);
-
-    } catch (error) {
-        console.error('Erro ao carregar resultados históricos:', error);
-        throw new Error(`Erro ao carregar "${nomeArquivo}". Certifique-se de que o arquivo está na mesma pasta do index.html.`);
-    }
-}
-
-/**
  * Calcula os prêmios para cada sorteio histórico.
  */
-function calculatePrizes(jogos, resultadosHistoricos, tipoJogo, premios) {
+function calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios) {
     return resultadosHistoricos.map(resultado => {
         const numerosHistoricos = new Set(resultado);
         let premioTotal = 0;
 
         jogos.forEach(jogo => {
             const acertos = jogo.filter(num => numerosHistoricos.has(num)).length;
-
-            if (tipoJogo === 'quina') {
-                if (acertos === 2) premioTotal += premios.duque;
-                else if (acertos === 3) premioTotal += premios.terno;
-                else if (acertos === 4) premioTotal += premios.quadra;
-                else if (acertos === 5) premioTotal += premios.quina;
-            } else if (tipoJogo === 'lotofacil') {
-                if (acertos === 11) premioTotal += premios.onze;
-                else if (acertos === 12) premioTotal += premios.doze;
-                else if (acertos === 13) premioTotal += premios.treze;
-                else if (acertos === 14) premioTotal += premios.quatorze;
-                else if (acertos === 15) premioTotal += premios.quinze;
-            } else { // megasena
-                if (acertos === 4) premioTotal += premios.quadra;
-                else if (acertos === 5) premioTotal += premios.quina;
-                else if (acertos === 6) premioTotal += premios.sena;
+            const tierHit = gameConfig.prizeTiers.find(tier => tier.hits === acertos);
+            if (tierHit) {
+                // Acessa o valor do prêmio pelo 'key' do tier (ex: 'quadra', 'quina')
+                // O objeto 'premios' deve ter chaves correspondentes.
+                if (premios[tierHit.key] !== undefined) {
+                    premioTotal += premios[tierHit.key];
+                }
             }
         });
 
@@ -133,10 +112,10 @@ function calculatePrizes(jogos, resultadosHistoricos, tipoJogo, premios) {
  * Obtém as configurações dos eixos do gráfico.
  */
 function getAxisConfig() {
-    const xMinElement = document.getElementById('graficoEixoXMin');
-    const xMaxElement = document.getElementById('graficoEixoXMax');
-    const yMinElement = document.getElementById('graficoEixoYMin');
-    const yMaxElement = document.getElementById('graficoEixoYMax');
+    const xMinElement = document.getElementById('analise-grafico-eixo-x-min');
+    const xMaxElement = document.getElementById('analise-grafico-eixo-x-max');
+    const yMinElement = document.getElementById('analise-grafico-eixo-y-min');
+    const yMaxElement = document.getElementById('analise-grafico-eixo-y-max');
 
     return {
         xMin: xMinElement ? parseFloat(xMinElement.value) || null : null, // Mudado para parseFloat para percentuais
@@ -174,7 +153,7 @@ function createChart(canvasId, datasets, labels, title, axisConfig = {}) {
                 color: 'rgba(0, 0, 0, 0.1)'
             },
             ticks: {
-                callback: function(value, index, ticks) {
+                callback: function(value) {
                     // Converte o índice para percentual baseado no total de dados
                     const totalItems = this.chart.data.labels.length;
                     const percentage = ((value + 1) / totalItems) * 100;
@@ -338,10 +317,10 @@ function populateAxisSuggestions() {
         });
     });
 
-    const xMinInput = document.getElementById('graficoEixoXMin');
-    const xMaxInput = document.getElementById('graficoEixoXMax');
-    const yMinInput = document.getElementById('graficoEixoYMin');
-    const yMaxInput = document.getElementById('graficoEixoYMax');
+    const xMinInput = document.getElementById('analise-grafico-eixo-x-min');
+    const xMaxInput = document.getElementById('analise-grafico-eixo-x-max');
+    const yMinInput = document.getElementById('analise-grafico-eixo-y-min');
+    const yMaxInput = document.getElementById('analise-grafico-eixo-y-max');
 
     if (xMinInput && !xMinInput.value) {
         xMinInput.placeholder = `Mín: ${minX}%`;
@@ -483,134 +462,6 @@ function printChartToPDF() {
 }
 
 /**
- * Inicializa os sliders dos eixos do gráfico.
- */
-function initializeAxisSliders() {
-    // Configurar sliders X (percentuais)
-    const xMinSlider = document.getElementById('graficoEixoXMinSlider');
-    const xMaxSlider = document.getElementById('graficoEixoXMaxSlider');
-    const xMinInput = document.getElementById('graficoEixoXMin');
-    const xMaxInput = document.getElementById('graficoEixoXMax');
-
-    // Configurar sliders Y (valores monetários)
-    const yMinSlider = document.getElementById('graficoEixoYMinSlider');
-    const yMaxSlider = document.getElementById('graficoEixoYMaxSlider');
-    const yMinInput = document.getElementById('graficoEixoYMin');
-    const yMaxInput = document.getElementById('graficoEixoYMax');
-
-    if (!xMinSlider || !xMaxSlider || !yMinSlider || !yMaxSlider) {
-        console.warn('Sliders dos eixos não encontrados');
-        return;
-    }
-
-    // Configurar ranges dos sliders Y com máximo fixo de 100.000
-    yMinSlider.min = 0;
-    yMinSlider.max = 100000;
-    yMinSlider.step = 100;
-    yMinSlider.value = 0;
-
-    yMaxSlider.min = 0;
-    yMaxSlider.max = 100000;
-    yMaxSlider.step = 100;
-    yMaxSlider.value = 50000;
-
-    // Sincronizar slider X Min com input (percentual)
-    xMinSlider.addEventListener('input', function() {
-        xMinInput.value = this.value;
-        updateChartAxes();
-    });
-
-    xMinInput.addEventListener('input', function() {
-        const value = parseFloat(this.value) || 0;
-        xMinSlider.value = Math.max(0, Math.min(100, value));
-        updateChartAxes();
-    });
-
-    // Sincronizar slider X Max com input (percentual)
-    xMaxSlider.addEventListener('input', function() {
-        xMaxInput.value = this.value;
-        updateChartAxes();
-    });
-
-    xMaxInput.addEventListener('input', function() {
-        const value = parseFloat(this.value) || 100;
-        xMaxSlider.value = Math.max(0, Math.min(100, value));
-        updateChartAxes();
-    });
-
-    // Sincronizar slider Y Min com input
-    yMinSlider.addEventListener('input', function() {
-        const value = parseFloat(this.value);
-        yMinInput.value = formatCurrency(value);
-        updateChartAxes();
-    });
-
-    yMinInput.addEventListener('input', function() {
-        const value = parseBrazilianNumber(this.value) || 0;
-        yMinSlider.value = Math.max(0, Math.min(100000, value));
-        updateChartAxes();
-    });
-
-    // Sincronizar slider Y Max com input
-    yMaxSlider.addEventListener('input', function() {
-        const value = parseFloat(this.value);
-        yMaxInput.value = formatCurrency(value);
-        updateChartAxes();
-    });
-
-    yMaxInput.addEventListener('input', function() {
-        const value = parseBrazilianNumber(this.value) || 0;
-        yMaxSlider.value = Math.max(0, Math.min(100000, value));
-        updateChartAxes();
-    });
-}
-
-/**
- * Atualiza os ranges dos sliders Y baseados nos dados do gráfico atual.
- */
-function updateSliderRanges() {
-    if (!currentChartData) return;
-
-    let minY = Infinity, maxY = -Infinity;
-
-    currentChartData.datasets.forEach(dataset => {
-        dataset.data.forEach(value => {
-            if (typeof value === 'number' && !isNaN(value)) {
-                minY = Math.min(minY, value);
-                maxY = Math.max(maxY, value);
-            }
-        });
-    });
-
-    const yMinSlider = document.getElementById('graficoEixoYMinSlider');
-    const yMaxSlider = document.getElementById('graficoEixoYMaxSlider');
-
-    if (yMinSlider && yMaxSlider && minY !== Infinity && maxY !== -Infinity) {
-        // Manter o máximo fixo em 100.000, mas ajustar o step se necessário
-        const dataRange = maxY - minY;
-        const step = Math.max(1, Math.floor(dataRange / 1000));
-        
-        yMinSlider.min = 0;
-        yMinSlider.max = 100000; // Máximo fixo
-        yMinSlider.step = step;
-        
-        yMaxSlider.min = 0;
-        yMaxSlider.max = 100000; // Máximo fixo
-        yMaxSlider.step = step;
-
-        // Ajustar valores iniciais se estiverem fora do range dos dados
-        if (!yMinSlider.value || yMinSlider.value == "0") {
-            const suggestedMin = Math.max(0, Math.floor(minY));
-            yMinSlider.value = Math.min(suggestedMin, 100000);
-        }
-        if (!yMaxSlider.value || yMaxSlider.value == "50000") {
-            const suggestedMax = Math.min(Math.ceil(maxY), 100000);
-            yMaxSlider.value = Math.max(suggestedMax, yMinSlider.value);
-        }
-    }
-}
-
-/**
  * Formata um valor como moeda brasileira.
  */
 function formatCurrency(value) {
@@ -624,18 +475,8 @@ function formatCurrency(value) {
  * Reseta os sliders para os valores padrão.
  */
 function resetAxisSliders() {
-    const xMinSlider = document.getElementById('graficoEixoXMinSlider');
-    const xMaxSlider = document.getElementById('graficoEixoXMaxSlider');
-    const yMinSlider = document.getElementById('graficoEixoYMinSlider');
-    const yMaxSlider = document.getElementById('graficoEixoYMaxSlider');
-
-    if (xMinSlider) xMinSlider.value = 0;
-    if (xMaxSlider) xMaxSlider.value = 100;
-    if (yMinSlider) yMinSlider.value = 0;
-    if (yMaxSlider) yMaxSlider.value = 50000; // Valor padrão dentro do range de 100.000
-
     // Limpa os inputs também
-    const inputs = ['graficoEixoXMin', 'graficoEixoXMax', 'graficoEixoYMin', 'graficoEixoYMax'];
+    const inputs = ['analise-grafico-eixo-x-min', 'analise-grafico-eixo-x-max', 'analise-grafico-eixo-y-min', 'analise-grafico-eixo-y-max'];
     inputs.forEach(inputId => {
         const input = document.getElementById(inputId);
         if (input) input.value = '';
@@ -650,6 +491,17 @@ async function generateResultCharts() {
     const progress = document.getElementById('progress-graficos');
     const loader = document.getElementById('loader-graficos');
     const container = document.getElementById('graficos-container');
+    const section = document.getElementById('analise-graficos-section');
+    const printBtn = document.getElementById('btn-imprimir-grafico-analise');
+
+    // Hide section at the beginning
+    if (section) {
+        section.style.display = 'none';
+    }
+    // Hide print button
+    if (printBtn) {
+        printBtn.style.display = 'none';
+    }
 
     if (!status || !progress || !loader || !container) {
         console.error('Elementos de gráficos não encontrados');
@@ -678,29 +530,51 @@ async function generateResultCharts() {
         }
 
         const tipoJogo = document.getElementById('gameTypeGlobal').value;
-        const numerosEsperados = tipoJogo === 'quina' ? 5 : (tipoJogo === 'lotofacil' ? 15 : 6);
-        const maxBalls = tipoJogo === 'quina' ? 80 : (tipoJogo === 'lotofacil' ? 25 : 60);
+        const gameConfig = GAME_CHART_CONFIG[tipoJogo];
+        if (!gameConfig) {
+            throw new Error(`Configurações de jogo não encontradas para "${tipoJogo}"`);
+        }
 
         // Coletar arquivos selecionados
         const arquivos = [];
-        for (let i = 1; i <= 6; i++) {
-            const fileInput = document.getElementById(`graficoFile${i}`);
-            if (fileInput && fileInput.files[0]) {
-                arquivos.push({
-                    file: fileInput.files[0],
-                    name: fileInput.files[0].name.replace('.xlsx', ''),
-                    index: i
-                });
+        document.querySelectorAll('#analise-file-list .file-item-analise').forEach(item => {
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (checkbox && checkbox.checked) {
+                const fileId = item.dataset.fileId;
+                if (window.analiseFiles && window.analiseFiles[fileId]) {
+                    arquivos.push({
+                        file: window.analiseFiles[fileId].file,
+                        name: window.analiseFiles[fileId].name.replace(/\.xlsx$/i, ''),
+                    });
+                }
             }
-        }
+        });
 
         if (arquivos.length === 0) {
-            throw new Error('Por favor, selecione pelo menos um arquivo para análise.');
+            throw new Error('Por favor, adicione e selecione pelo menos um arquivo de jogo para análise.');
         }
 
-        // Carregar resultados históricos
-        progress.textContent = 'Carregando resultados históricos...';
-        const resultadosHistoricos = await loadHistoricalResults(tipoJogo);
+        // Simular sorteios, usando a mesma lógica da aba de Análise
+        progress.textContent = 'Preparando simulação...';
+        const selectedSimBalls = Array.from(document.querySelectorAll('#simulation-ball-panel .ball.active')).map(b => parseInt(b.dataset.number, 10));
+
+        if (selectedSimBalls.length < gameConfig.expectedNumbers) {
+            // This error is now primarily for the user to see in the context of this specific action
+            throw new Error(`O número de bolas selecionadas para simulação (${selectedSimBalls.length}) é menor que o necessário para um sorteio (${gameConfig.expectedNumbers}). Selecione mais bolas no painel de parâmetros.`);
+        }
+        const ballUniverse = selectedSimBalls;
+
+        const simulationCount = parseInt(document.getElementById('simulatedGamesCount').value, 10);
+        progress.textContent = `Simulando ${simulationCount.toLocaleString('pt-BR')} sorteios...`;
+        const resultadosHistoricos = [];
+        for (let i = 0; i < simulationCount; i++) {
+            const draw = randomChoice(ballUniverse, null, gameConfig.expectedNumbers, false);
+            resultadosHistoricos.push(draw.sort((a, b) => a - b));
+        }
+
+        if (resultadosHistoricos.length === 0) {
+            throw new Error('Nenhum sorteio foi simulado. Verifique as configurações.');
+        }
 
         // Coletar valores de prêmios com verificação segura de elementos
         const premios = {};
@@ -748,14 +622,14 @@ async function generateResultCharts() {
             const arquivo = arquivos[i];
             progress.textContent = `Processando arquivo ${i + 1} de ${arquivos.length}: ${arquivo.name}...`;
 
-            const jogos = await readGamesFromFile(arquivo.file, numerosEsperados, maxBalls);
+            const jogos = await readGamesFromFile(arquivo.file, gameConfig.expectedNumbers, gameConfig.maxBalls);
             
             if (jogos.length === 0) {
                 console.warn(`Nenhum jogo válido encontrado no arquivo: ${arquivo.name}`);
                 continue;
             }
 
-            const premiosPorSorteio = calculatePrizes(jogos, resultadosHistoricos, tipoJogo, premios);
+            const premiosPorSorteio = calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios);
             const dadosOrdenados = premiosPorSorteio
                 .map((premio, index) => ({ premio, sorteio: index + 1 }))
                 .sort((a, b) => a.premio - b.premio);
@@ -794,7 +668,8 @@ async function generateResultCharts() {
         chartContainer.appendChild(canvas);
         container.appendChild(chartContainer);
 
-        // Mostrar container e criar gráfico
+        // Mostrar seção inteira, container e criar gráfico
+        if (section) section.style.display = 'block';
         container.style.display = 'block';
         createChart('resultsChart', datasets, labels, 
             `Prêmios por Sorteio (Ordenados por Valor) - ${tipoJogo.toUpperCase()}`, axisConfig);
@@ -802,13 +677,9 @@ async function generateResultCharts() {
         // Preencher sugestões de valores mínimos e máximos
         populateAxisSuggestions();
 
-        // Inicializar sliders após criar o gráfico
-        initializeAxisSliders();
-
-        // Mostrar botão de imprimir gráfico
-        const btnImprimirGrafico = document.getElementById('btn-imprimir-grafico');
-        if (btnImprimirGrafico) {
-            btnImprimirGrafico.style.display = 'inline-flex';
+        // Show print button
+        if (printBtn) {
+            printBtn.style.display = 'inline-flex';
         }
 
         status.textContent = `Gráfico gerado com sucesso! ${arquivos.length} arquivo(s) analisado(s).`;
@@ -820,12 +691,6 @@ async function generateResultCharts() {
         status.textContent = 'Erro: ' + error.message;
         status.className = 'status-message error';
         progress.style.display = 'none';
-        
-        // Esconder botão de imprimir em caso de erro
-        const btnImprimirGrafico = document.getElementById('btn-imprimir-grafico');
-        if (btnImprimirGrafico) {
-            btnImprimirGrafico.style.display = 'none';
-        }
     } finally {
         loader.style.display = 'none';
     }

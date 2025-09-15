@@ -1,14 +1,15 @@
 /**
- * Valida as configurações do jogo.
- * @param {Object} config - Configurações do jogo.
- * @param {number} config.totalBolas - Total de bolas no globo.
- * @param {number} config.qtdBolasSelecionadas - Quantidade de bolas do universo a ser usado.
- * @param {Array<number>} config.dezenasSelecionadas - Array de dezenas escolhidas pelo usuário (se não bolasAleatorias).
- * @param {boolean} config.bolasAleatorias - Se as dezenas do universo são escolhidas aleatoriamente.
- * @param {number} config.dezenasJogadas - Quantidade de dezenas por jogo.
- * @param {number} config.acertosGarantidos - Quantidade de acertos a garantir.
- * @param {boolean} config.aproveitaJogos - Se usa arquivo de jogos existentes.
- * @param {number} config.quantidadeJogos - Quantidade de jogos a gerar.
+ * Valida o objeto de configuração do jogo antes da geração.
+ * @param {object} config - O objeto com as configurações do jogo.
+ * @param {number} config.totalBolas - O número total de bolas no globo (ex: 60 para Mega-Sena).
+ * @param {number} config.qtdBolasSelecionadas - A quantidade de dezenas que formarão o universo de geração.
+ * @param {number[]} config.dezenasSelecionadas - O array de dezenas que compõem o universo de geração.
+ * @param {boolean} config.bolasAleatorias - Flag que indica se o universo de dezenas foi gerado aleatoriamente.
+ * @param {number} config.dezenasJogadas - A quantidade de dezenas em cada jogo a ser gerado (ex: 6).
+ * @param {number} config.acertosGarantidos - A garantia mínima de acertos desejada (ex: 4 para quadra).
+ * @param {boolean} config.aproveitaJogos - Flag que indica se jogos de um arquivo existente devem ser aproveitados.
+ * @param {number} config.quantidadeJogos - O número total de jogos a serem gerados.
+ * @throws {Error} Lança um erro se qualquer validação falhar.
  */
 function validateGameConfig(config) {
     if (isNaN(config.totalBolas) || config.totalBolas <= 0) {
@@ -21,6 +22,7 @@ function validateGameConfig(config) {
         throw new Error('Total de bolas no globo deve ser maior ou igual ao número de dezenas por jogo.');
     }
 
+    // Validações para o universo de dezenas
     if (config.bolasAleatorias) {
         if (isNaN(config.qtdBolasSelecionadas) || config.qtdBolasSelecionadas <= 0) {
             throw new Error('Quantidade de bolas para seleção (aleatória) deve ser um número positivo.');
@@ -46,34 +48,25 @@ function validateGameConfig(config) {
                 throw new Error(`Dezena fixa "${dezena}" é inválida. Deve ser um inteiro entre 1 e ${config.totalBolas}.`);
             }
         }
-        // config.qtdBolasSelecionadas é atualizado em generate.js para refletir o length de dezenasSelecionadas válidas
     }
     
-    // Após a lógica acima, config.qtdBolasSelecionadas (seja da entrada direta ou do length de dezenasSelecionadas)
-    // deve ser o número de bolas que compõem o universo de onde os jogos serão gerados.
-    // Essa validação é redundante se as anteriores passaram, mas para garantir:
-    if (config.dezenasSelecionadas.length < config.dezenasJogadas) {
-         throw new Error('O universo de dezenas disponíveis para gerar jogos é menor que o número de dezenas por jogo.');
-    }
-
-
+    // Validações para a garantia de acertos
     if (isNaN(config.acertosGarantidos) || config.acertosGarantidos < 0) { // 0 pode ser válido se a intenção é apenas gerar jogos
         throw new Error('Acertos garantidos deve ser um número não negativo.');
     }
     if (config.acertosGarantidos > config.dezenasJogadas) {
         throw new Error('Acertos garantidos não podem exceder o número de dezenas por jogo.');
     }
-     if (config.acertosGarantidos > config.dezenasSelecionadas.length) { // Nova validação
+    if (config.dezenasSelecionadas && config.acertosGarantidos > config.dezenasSelecionadas.length) { // Nova validação
         throw new Error('Acertos garantidos não podem exceder o total de dezenas disponíveis para seleção.');
     }
 
-
+    // Validação para aproveitamento de jogos
     if (config.aproveitaJogos && !document.getElementById('jogosExistentesFile').files[0] && config.jogosExistentes.length === 0) {
-        // Relaxar esta validação aqui, pois generateGames pode lidar com isso.
-        // Apenas logar um aviso se for o caso.
-        console.warn('Opção "Aproveitar Jogos Existentes" marcada, mas nenhum arquivo selecionado ou jogos carregados.');
+        throw new Error('A opção "Aproveitar Jogos Existentes" está marcada, mas nenhum arquivo foi selecionado.');
     }
 
+    // Validações para a quantidade de jogos
     if (isNaN(config.quantidadeJogos) || config.quantidadeJogos <= 0) {
         throw new Error('Número de jogos a gerar deve ser um número positivo.');
     }
@@ -81,6 +74,7 @@ function validateGameConfig(config) {
         throw new Error('Número de jogos excede o limite prático (10 milhões). Reduza a quantidade.');
     }
 
+    // Validação para o tempo máximo na geração aleatória
     if (config.jogosSorteados) {
         if (isNaN(config.maxTime) || config.maxTime < 0) {
             throw new Error('Tempo máximo para geração aleatória deve ser um número não negativo (0 para sem limite).');
@@ -90,40 +84,71 @@ function validateGameConfig(config) {
 
 /**
  * Converte um número no formato brasileiro (ex.: 1.234,56 ou 1234,56 ou R$ 1.234,56) para float.
- * @param {string} value - Valor no formato brasileiro.
- * @returns {number} Valor convertido, ou NaN se inválido.
+ * @param {string} value - O valor em formato de string a ser convertido.
+ * @returns {number} O valor convertido para número, ou NaN se a entrada for inválida.
  */
 function parseBrazilianNumber(value) {
     if (typeof value !== 'string' || !value) return NaN;
     
-    // Remove 'R$', espaços em branco, e usa ponto como separador de milhar (se houver) e vírgula como decimal.
+    // 1. Remove o símbolo 'R$' e espaços adjacentes.
+    // 2. Remove os pontos (separadores de milhar).
+    // 3. Substitui a vírgula (separador decimal) por um ponto.
     const cleaned = value
-        .replace(/\s*R\$\s*/g, '') // Remove 'R$' e espaços ao redor
-        .replace(/\./g, (match, offset, fullString) => {
-            // Se o ponto for seguido por 3 dígitos e depois (fim da string ou não-dígito), é milhar.
-            // Ou se o ponto está antes de uma vírgula decimal.
-            // Esta lógica é um pouco complexa devido à ambiguidade.
-            // Ex: 1.234,56 (ponto é milhar) vs 1234.56 (ponto é decimal se não houver vírgula)
-            // A biblioteca Cleave.js já formata para "1.234,56", então o parse deve esperar isso.
-            // Se vier "1234.56" direto, pode ser interpretado errado se não houver vírgula.
-            // Assumindo que o Cleave.js formatou: pontos são milhares, vírgula é decimal.
-            if (fullString.indexOf(',') !== -1) { // Se tem vírgula, ponto é milhar
-                return '';
-            }
-            // Se não tem vírgula, um único ponto é decimal
-            // Se múltiplos pontos e sem vírgula, é ambíguo. Cleave não deve gerar isso.
-            // Para robustez, se não há vírgula e há ponto, assumimos que o último ponto é decimal.
-            // Esta heurística é falha. Melhor confiar que Cleave.js padroniza.
-            return ''; // Remover todos os pontos (separadores de milhar)
-        })
-        .replace(',', '.'); // Troca vírgula (decimal) por ponto
+        .replace(/\s*R\$\s*/g, '') 
+        .replace(/\./g, '')        
+        .replace(',', '.');        
 
     const number = parseFloat(cleaned);
-    // Não lançar erro aqui, apenas retornar NaN para que o chamador decida.
-    // if (isNaN(number)) {
-    //     throw new Error(`Formato de número inválido: "${value}" resultou em "${cleaned}"`);
-    // }
     return number;
 }
 
-export { validateGameConfig, parseBrazilianNumber };
+/**
+ * Validates an analysis file, infers its game type, and extracts its data.
+ * @param {File} file - The Excel file to validate.
+ * @param {string} currentGameType - The game type currently selected in the UI.
+ * @returns {Promise<{games: Array<Array<number>>, uniqueBalls: Array<number>}>}
+ * @throws {Error} If the file is invalid or doesn't match the game type.
+ */
+async function validateAndGetFileInfo(file, currentGameType) {
+    if (!window.XLSX) throw new Error("Biblioteca XLSX não carregada.");
+
+    const gameRules = {
+        megasena: { min: 6, max: 20 },
+        quina: { min: 5, max: 15 },
+        lotofacil: { min: 15, max: 20 }
+    };
+
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: 'array' });
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+
+    const validGames = [];
+    const uniqueBalls = new Set();
+    let inferredGameType = null;
+
+    for (const row of jsonData) {
+        if (!row) continue;
+        const gameNumbers = row.filter(num => num !== null && !isNaN(Number(num)) && Number.isInteger(Number(num)) && num >= 1).map(Number);
+        
+        if (gameNumbers.length > 0) {
+            if (!inferredGameType) {
+                for (const type in gameRules) {
+                    if (gameNumbers.length >= gameRules[type].min && gameNumbers.length <= gameRules[type].max) {
+                        inferredGameType = type;
+                        break;
+                    }
+                }
+            }
+            validGames.push(gameNumbers);
+            gameNumbers.forEach(n => uniqueBalls.add(n));
+        }
+    }
+
+    if (validGames.length === 0) throw new Error(`O arquivo "${file.name}" não contém jogos válidos.`);
+    if (inferredGameType !== currentGameType) throw new Error(`O arquivo "${file.name}" parece ser do tipo "${inferredGameType}", mas o tipo de jogo selecionado é "${currentGameType}".`);
+
+    return { games: validGames, uniqueBalls: Array.from(uniqueBalls).sort((a, b) => a - b) };
+}
+
+export { validateGameConfig, parseBrazilianNumber, validateAndGetFileInfo };

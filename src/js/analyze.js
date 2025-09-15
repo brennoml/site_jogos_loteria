@@ -1,95 +1,423 @@
-import { combinations } from './utils.js';
+import { combinations, randomChoice, formatBrazilianCurrency, formatBrazilianPercentage } from './utils.js';
 import { parseBrazilianNumber } from './validators.js';
 import { PRIZE_DEFAULTS } from './constants.js';
 
+// Global map to hold chart instances, to prevent memory leaks
+window.pieCharts = window.pieCharts || {};
+
 /**
- * Processa arquivos de jogos e gera relatório de análise.
+ * Configurações de análise para cada tipo de jogo.
+ * Centraliza as regras e nomes de prêmios, eliminando a necessidade de blocos if/else repetitivos.
  */
-async function processFiles() {
+const GAME_ANALYSIS_CONFIG = {
+    megasena: {
+        fileName: 'jogos_megasena_passados.xlsx',
+        expectedNumbers: 6,
+        maxBalls: 60,
+        prizeTiers: [
+            { key: 'quadra', hits: 4, inputId: 'megasenaQuadraAnalise' },
+            { key: 'quina', hits: 5, inputId: 'megasenaQuinaAnalise' },
+            { key: 'sena', hits: 6, inputId: 'megasenaSenaAnalise', isMaxPrize: true }
+        ],
+        costInputId: 'megasenaCustoApostaAnalise'
+    },
+    quina: {
+        fileName: 'jogos_quina_passados.xlsx',
+        expectedNumbers: 5,
+        maxBalls: 80,
+        prizeTiers: [
+            { key: 'duque', hits: 2, inputId: 'quinaDuqueAnalise' },
+            { key: 'terno', hits: 3, inputId: 'quinaTernoAnalise' },
+            { key: 'quadra', hits: 4, inputId: 'quinaQuadraAnalise' },
+            { key: 'quina', hits: 5, inputId: 'quinaQuinaAnalise', isMaxPrize: true }
+        ],
+        costInputId: 'quinaCustoApostaAnalise'
+    },
+    lotofacil: {
+        fileName: 'jogos_lotofacil_passados.xlsx',
+        expectedNumbers: 15,
+        maxBalls: 25,
+        prizeTiers: [
+            { key: 'onze', hits: 11, inputId: 'lotofacilOnzeAnalise' },
+            { key: 'doze', hits: 12, inputId: 'lotofacilDozeAnalise' },
+            { key: 'treze', hits: 13, inputId: 'lotofacilTrezeAnalise' },
+            { key: 'quatorze', hits: 14, inputId: 'lotofacilQuatorzeAnalise' },
+            { key: 'quinze', hits: 15, inputId: 'lotofacilQuinzeAnalise', isMaxPrize: true }
+        ],
+        costInputId: 'lotofacilCustoApostaAnalise'
+    }
+};
+
+const PRIZE_COLOR_MAP = {
+    'Sem Prêmio': '#9ca3af',
+    'Duque': '#7c3aed',
+    'Terno': '#db2777',
+    'Quadra': '#2563eb',
+    'Quina': '#059669',
+    'Sena': '#f59e0b',
+    'Onze': '#7c3aed',
+    'Doze': '#65a30d',
+    'Treze': '#06b6d4',
+    'Quatorze': '#dc2626',
+    'Quinze': '#f59e0b'
+};
+
+/**
+ * Gera um PDF com os gráficos de pizza e um resumo da análise.
+ */
+async function printPieChartsToPDF() {
+    if (!window.jspdf) {
+        alert('Erro: Biblioteca jsPDF não carregada.');
+        return;
+    }
+    if (!window.analysisReportData) {
+        alert('Execute uma análise primeiro para gerar o PDF.');
+        return;
+    }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const { dadosResumo, tipoJogo } = window.analysisReportData;
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 15;
+    let y = margin;
+
+    // Cabeçalho
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text('Relatório de Análise - Distribuição de Prêmios', pageWidth / 2, y, { align: 'center' });
+    y += 10;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(`Tipo de Jogo: ${tipoJogo.toUpperCase()}`, pageWidth / 2, y, { align: 'center' });
+    y += 15;
+
+    // Resumo
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Resumo da Análise', margin, y);
+    y += 8;
+
+    const keyStats = [
+        'Quantidade dos Meus Jogos (Simples)',
+        'Quantidade de Sorteios Históricos Analisados',
+        'Custo Total das Minhas Apostas (por sorteio)',
+        'Média de Valor Total de Prêmio por Sorteio',
+        'Retorno Sobre Investimento (ROI Total %)'
+    ];
+
+    doc.setFontSize(9);
+    dadosResumo.forEach(row => {
+        if (keyStats.includes(row[0])) {
+            doc.setFont('helvetica', 'bold');
+            doc.text(row[0] + ':', margin, y);
+            doc.setFont('helvetica', 'normal');
+            let value = row[1];
+            if (typeof value === 'number') {
+                if (row[0].includes('%')) {
+                    value = formatBrazilianPercentage(value);
+                } else if (row[0].includes('Custo') || row[0].includes('Prêmio')) {
+                    value = formatBrazilianCurrency(value);
+                } else {
+                    value = value.toLocaleString('pt-BR');
+                }
+            }
+            doc.text(String(value), margin + 80, y);
+            y += 6;
+        }
+    });
+    y += 10;
+
+    // Gráficos de Pizza
+    const chartElements = document.querySelectorAll('#prize-distribution-charts-grid .pie-chart-item canvas');
+    if (chartElements.length === 0) {
+        doc.text('Nenhum gráfico de pizza para exibir.', margin, y);
+    }
+
+    for (let i = 0; i < chartElements.length; i++) {
+        const canvas = chartElements[i];
+        const chartImage = canvas.toDataURL('image/png', 1.0);
+        const chartHeight = 80;
+        const chartWidth = (canvas.width / canvas.height) * chartHeight;
+        if (y + chartHeight > doc.internal.pageSize.getHeight() - margin) {
+            doc.addPage();
+            y = margin;
+        }
+        doc.addImage(chartImage, 'PNG', (pageWidth - chartWidth) / 2, y, chartWidth, chartHeight);
+        y += chartHeight + 10;
+    }
+
+    doc.save(`Relatorio_Pizza_${tipoJogo}.pdf`);
+}
+
+/**
+ * Salva o relatório de análise em um arquivo Excel.
+ */
+function saveAnalysisToExcel() {
+    if (window.analysisWorkbook && window.analysisWorkbook.wb && window.analysisWorkbook.filename) {
+        XLSX.writeFile(window.analysisWorkbook.wb, window.analysisWorkbook.filename);
+    } else {
+        alert('Nenhum relatório para salvar. Execute uma análise primeiro.');
+    }
+}
+
+/**
+ * Renders a pie chart in a given container.
+ * @param {HTMLElement} containerElement - The div element where the chart will be rendered.
+ * @param {object} chartData - Data for the chart, including labels and datasets.
+ * @param {string} title - The title for the chart.
+ */
+function renderPrizeDistributionChart(containerElement, chartData, title) {
+    // Destroy old chart if it exists for this container to prevent memory leaks
+    if (window.pieCharts[containerElement.id]) {
+        window.pieCharts[containerElement.id].destroy();
+    }
+
+    const total = Object.values(chartData.counts).reduce((a, b) => a + b, 0);
+
+    if (total === 0) {
+        containerElement.innerHTML = `<div class="status-message info" style="display:flex; justify-content:center; align-items:center; height:100%; text-align: center;">Nenhum prêmio foi ganho na simulação para este conjunto de jogos.</div>`;
+        return;
+    }
+
+    // Create a new canvas for the chart
+    const canvas = document.createElement('canvas');
+    containerElement.innerHTML = ''; // Clear previous content
+    containerElement.appendChild(canvas);
+
+    const chartDataPayload = [];
+
+    if (chartData.counts.semPremio > 0) {
+        chartDataPayload.push({
+            label: 'Sem Prêmio',
+            value: chartData.counts.semPremio,
+            color: PRIZE_COLOR_MAP['Sem Prêmio']
+        });
+    }
+
+    const sortedPrizeTiers = [...chartData.gameConfig.prizeTiers].sort((a, b) => a.hits - b.hits);
+    sortedPrizeTiers.forEach(tier => {
+        if (chartData.counts[tier.key] > 0) {
+            const label = tier.key.charAt(0).toUpperCase() + tier.key.slice(1);
+            chartDataPayload.push({
+                label: label,
+                value: chartData.counts[tier.key],
+                color: PRIZE_COLOR_MAP[label] || '#333'
+            });
+        }
+    });
+
+    const ctx = canvas.getContext('2d');
+    const newChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: chartDataPayload.map(d => d.label),
+            datasets: [{
+                label: 'Quantidade',
+                data: chartDataPayload.map(d => d.value),
+                backgroundColor: chartDataPayload.map(d => d.color),
+                borderColor: '#ffffff',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: title,
+                    font: { size: 18, weight: 'bold' },
+                    padding: { top: 10, bottom: 20 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.raw;
+                            const percentage = total > 0 ? ((value / total) * 100).toFixed(2) : 0;
+                            return `${label}: ${value.toLocaleString('pt-BR')} (${percentage}%)`;
+                        }
+                    }
+                },
+                legend: {
+                    position: 'right',
+                    labels: {
+                        generateLabels: function(chart) {
+                            const data = chart.data;
+                            if (data.labels.length && data.datasets.length) {
+                                const total = data.datasets[0].data.reduce((a, b) => a + b, 0);
+                                return data.labels.map((label, i) => {
+                                    const meta = chart.getDatasetMeta(0);
+                                    const style = meta.controller.getStyle(i);
+                                    const value = data.datasets[0].data[i];
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(2) : 0;
+
+                                    return {
+                                        text: `${label}: ${percentage}%`,
+                                        fillStyle: style.backgroundColor,
+                                        strokeStyle: style.borderColor,
+                                        lineWidth: style.borderWidth,
+                                        hidden: isNaN(data.datasets[0].data[i]) || meta.data[i].hidden,
+                                        index: i
+                                    };
+                                });
+                            }
+                            return [];
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
+ * Função principal que orquestra a análise dos jogos do usuário contra o histórico de sorteios.
+ * 
+ * FLUXO DE TRABALHO:
+ * 1.  **Inicialização da UI**: Mostra loaders e limpa status anteriores.
+ * 2.  **Coleta de Dados**:
+ *     - Obtém o tipo de jogo (Mega-Sena, Quina, etc.).
+ *     - Obtém o arquivo de jogos do usuário.
+ *     - Carrega o arquivo de sorteios históricos correspondente.
+ * 3.  **Processamento e Validação**:
+ *     - Lê os dados dos arquivos Excel.
+ *     - Valida e limpa os jogos do usuário e os resultados históricos.
+ * 4.  **Expansão de Jogos**:
+ *     - Desdobra os jogos do usuário que têm mais dezenas que o padrão (ex: um jogo de 7 dezenas da Mega-Sena é expandido em 7 jogos de 6).
+ * 5.  **Cálculo de Resultados**:
+ *     - Itera sobre cada sorteio simulado.
+ *     - Para cada sorteio, compara com todos os jogos (expandidos) do usuário.
+ *     - Contabiliza os prêmios que teriam sido ganhos em cada sorteio.
+ *     - Acumula estatísticas gerais (total de prêmios, ROI, frequência, etc.).
+ * 6.  **Geração do Relatório**:
+ *     - Cria um novo arquivo Excel com múltiplas abas:
+ *       - **Resumo**: Estatísticas chave da análise.
+ *       - **Prêmios por Sorteio**: Detalhamento de ganhos em cada concurso.
+ *       - **Frequência de Prêmios**: Quantos sorteios renderam 0, 1, 2... prêmios de cada tipo.
+ *       - **Meus Jogos**: Listas dos jogos originais e expandidos.
+ *       - **Repetidos no Meu Jogo**: Análise de combinações internas (duques, ternos) que se repetem nos jogos do usuário.
+ * 7.  **Finalização**: Oferece o arquivo Excel para download e atualiza o status na UI.
+ */
+async function executeAnalysis() {
     const status = document.getElementById('status-analise');
     const progress = document.getElementById('progress-analise');
     const loader = document.getElementById('loader-analise');
+
+    // Hide and clear pie chart containers at the beginning
+    const pieChartsWrapper = document.getElementById('prize-distribution-charts-wrapper');
+    const pieChartsGrid = document.getElementById('prize-distribution-charts-grid');
+    if (pieChartsWrapper) {
+        pieChartsWrapper.style.display = 'none';
+        if (pieChartsGrid) pieChartsGrid.innerHTML = '';
+    }
+    // Hide export buttons at the beginning
+    const excelBtn = document.getElementById('btn-gerar-relatorio-excel');
+    const pizzaPdfBtn = document.getElementById('btn-imprimir-graficos-pizza');
+    if (excelBtn) excelBtn.style.display = 'none';
+    if (pizzaPdfBtn) pizzaPdfBtn.style.display = 'none';
+    const comparativePdfBtn = document.getElementById('btn-imprimir-grafico-analise');
+    if (comparativePdfBtn) comparativePdfBtn.style.display = 'none';
+    const simUniverseWrapper = document.getElementById('simulation-universe-display-wrapper');
+    if (simUniverseWrapper) {
+        simUniverseWrapper.style.display = 'none';
+    }
+    window.analysisWorkbook = null;
+    window.analysisReportData = null;
     status.textContent = 'Processando...';
     status.classList.remove('error');
     progress.textContent = 'Iniciando...';
     loader.style.display = 'block';
 
     try {
-        console.log('Coletando tipo de jogo...');
-        const tipoJogo = document.getElementById('gameTypeGlobal').value; // Corrigido para usar o ID global
-        const arquivoUsuario = document.getElementById('userFileAnalise').files[0];
+        const tipoJogo = document.getElementById('gameTypeGlobal').value;
+        const gameConfig = GAME_ANALYSIS_CONFIG[tipoJogo];
 
-        if (!arquivoUsuario) {
-            throw new Error('Por favor, selecione o arquivo dos seus jogos.');
-        }
-
-        console.log('Carregando arquivo histórico...');
-        const nomeArquivoHistorico = tipoJogo === 'quina' ? 'jogos_quina_passados.xlsx' :
-            (tipoJogo === 'lotofacil' ? 'jogos_lotofacil_passados.xlsx' : 'jogos_megasena_passados.xlsx');
-        const numerosEsperados = tipoJogo === 'quina' ? 5 : (tipoJogo === 'lotofacil' ? 15 : 6);
-
-        let respostaHistorico;
-        try {
-            respostaHistorico = await fetch(nomeArquivoHistorico);
-            if (!respostaHistorico.ok) {
-                throw new Error(`Arquivo histórico "${nomeArquivoHistorico}" não encontrado. Verifique se ele está na raiz do projeto.`);
+        // 1. Coletar arquivos de jogos do usuário da lista da UI
+        const userGameFilesData = [];
+        document.querySelectorAll('#analise-file-list .file-item-analise').forEach(item => {
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (checkbox && checkbox.checked) {
+                const fileId = item.dataset.fileId;
+                if (window.analiseFiles && window.analiseFiles[fileId]) {
+                    userGameFilesData.push(window.analiseFiles[fileId]);
+                }
             }
-        } catch (error) {
-            throw new Error(`Erro ao carregar "${nomeArquivoHistorico}". Certifique-se de que o arquivo está na mesma pasta do index.html.`);
+        });
+
+        if (userGameFilesData.length === 0) {
+            throw new Error('Por favor, adicione e selecione pelo menos um arquivo de jogo para análise.');
         }
 
-        console.log('Lendo arquivos...');
-        progress.textContent = 'Lendo arquivos...';
-        const dadosUsuario = await arquivoUsuario.arrayBuffer();
-        const dadosHistorico = await respostaHistorico.arrayBuffer();
-        
-        const planilhaUsuario = XLSX.read(dadosUsuario, { type: 'array' });
-        const planilhaHistorico = XLSX.read(dadosHistorico, { type: 'array' });
-        
-        const folhaUsuario = planilhaUsuario.Sheets[planilhaUsuario.SheetNames[0]];
-        const folhaHistorico = planilhaHistorico.Sheets[planilhaHistorico.SheetNames[0]];
-        
-        console.log('Processando jogos do usuário...');
+        // 2. Ler e processar todos os arquivos de jogos do usuário selecionados
         progress.textContent = 'Processando jogos do usuário...';
-        let jogosUsuario = XLSX.utils.sheet_to_json(folhaUsuario, { header: 1, defval: null });
-        let resultadosHistoricos = XLSX.utils.sheet_to_json(folhaHistorico, { header: 1, defval: null });
+        const allUserGamesData = []; // Estrutura: [{fileName: '...', originalGames: [...]}]
+        for (const fileData of userGameFilesData) {
+            const fileBuffer = await fileData.file.arrayBuffer();
+            const workbook = XLSX.read(fileBuffer, { type: 'array' });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            let jogos = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
 
-        const maxBalls = tipoJogo === 'quina' ? 80 : (tipoJogo === 'lotofacil' ? 25 : 60);
-        jogosUsuario = jogosUsuario.map(row => 
-            row.filter(num => num !== null && !isNaN(Number(num)) && Number.isInteger(Number(num)) && Number(num) >= 1 && Number(num) <= maxBalls).map(Number)
-        ).filter(row => row.length > 0);
+            jogos = jogos.map(row => 
+                row.filter(num => num !== null && !isNaN(Number(num)) && Number.isInteger(Number(num)) && Number(num) >= 1 && Number(num) <= gameConfig.maxBalls).map(Number)
+            ).filter(row => row.length > 0);
 
-
-        resultadosHistoricos = resultadosHistoricos.map(row => 
-            row.filter(num => num !== null && !isNaN(Number(num)) && Number.isInteger(Number(num)) && Number(num) >= 1 && Number(num) <= maxBalls).map(Number)
-        ).filter(row => row.length === numerosEsperados);
-
-
-        if (jogosUsuario.length === 0) {
-            throw new Error('Nenhum jogo válido encontrado no arquivo de jogos do usuário.');
-        }
-        if (resultadosHistoricos.length === 0) {
-            throw new Error(`Nenhum sorteio válido encontrado em ${nomeArquivoHistorico}. Verifique o formato e o conteúdo do arquivo.`);
+            if (jogos.length > 0) {
+                allUserGamesData.push({
+                    fileName: fileData.name,
+                    originalGames: jogos
+                });
+            }
         }
 
-        console.log('Expandindo jogos do usuário...');
+        if (allUserGamesData.length === 0) {
+            throw new Error('Nenhum jogo válido encontrado nos arquivos selecionados.');
+        }
+
+        // 3. Definir o universo de bolas para a simulação
+        const selectedSimBalls = Array.from(document.querySelectorAll('#simulation-ball-panel .ball.active')).map(b => parseInt(b.dataset.number, 10));
+
+        if (selectedSimBalls.length < gameConfig.expectedNumbers) {
+            throw new Error(`O número de bolas selecionadas para simulação (${selectedSimBalls.length}) é menor que o necessário para um sorteio (${gameConfig.expectedNumbers}). Selecione mais bolas.`);
+        }
+        const ballUniverse = selectedSimBalls;
+
+        // 4. Gerar sorteios simulados
+        const simulationCount = parseInt(document.getElementById('simulatedGamesCount').value, 10);
+        progress.textContent = `Simulando ${simulationCount.toLocaleString('pt-BR')} sorteios...`;
+        const resultadosHistoricos = [];
+        for (let i = 0; i < simulationCount; i++) {
+            const draw = randomChoice(ballUniverse, null, gameConfig.expectedNumbers, false);
+            resultadosHistoricos.push(draw.sort((a, b) => a - b));
+        }
+
+        // Expande jogos com mais dezenas que o padrão (desdobramento)
         progress.textContent = 'Expandindo jogos do usuário (se necessário)...';
         let jogosUsuarioExpandidos = [];
         let temJogosExpandidos = false;
         let indiceAtual = 1;
-        jogosUsuario.forEach(jogoOriginal => {
-            const numeros = jogoOriginal.map(Number); 
-            if (numeros.length > numerosEsperados) {
-                temJogosExpandidos = true;
-                const combinacoes = combinations(numeros, numerosEsperados);
-                combinacoes.forEach(combinacao => {
-                    jogosUsuarioExpandidos.push([indiceAtual++, ...combinacao.sort((a,b) => a - b)]);
-                });
-            } else if (numeros.length === numerosEsperados) {
-                 jogosUsuarioExpandidos.push([indiceAtual++, ...numeros.sort((a,b) => a - b)]);
-            } else {
-                console.warn(`Jogo [${numeros.join(',')}] com ${numeros.length} dezenas ignorado pois o esperado são ${numerosEsperados}.`);
-            }
+        
+        allUserGamesData.forEach(fileData => {
+            fileData.originalGames.forEach(jogoOriginal => {
+                const numeros = jogoOriginal.map(Number);
+                if (numeros.length > gameConfig.expectedNumbers) {
+                    temJogosExpandidos = true;
+                    const combinacoes = combinations(numeros, gameConfig.expectedNumbers);
+                    combinacoes.forEach(combinacao => {
+                        jogosUsuarioExpandidos.push({
+                            file: fileData.fileName,
+                            gameData: [indiceAtual++, ...combinacao.sort((a, b) => a - b)]
+                        });
+                    });
+                } else if (numeros.length === gameConfig.expectedNumbers) {
+                    jogosUsuarioExpandidos.push({
+                        file: fileData.fileName,
+                        gameData: [indiceAtual++, ...numeros.sort((a, b) => a - b)]
+                    });
+                } // else ignore games with fewer numbers
+            });
         });
 
         if (jogosUsuarioExpandidos.length === 0) {
@@ -98,8 +426,8 @@ async function processFiles() {
 
         // Coletar todas as dezenas únicas dos jogos do usuário (após expansão)
         const todasDezenasUnicasUsuario = new Set();
-        jogosUsuarioExpandidos.forEach(jogoComIndice => {
-            const dezenasDoJogo = jogoComIndice.slice(1); // Pega só as dezenas
+        jogosUsuarioExpandidos.forEach(item => {
+            const dezenasDoJogo = item.gameData.slice(1); // Pega só as dezenas
             dezenasDoJogo.forEach(dezena => todasDezenasUnicasUsuario.add(dezena));
         });
         const arrayDezenasUnicasUsuario = Array.from(todasDezenasUnicasUsuario).sort((a, b) => a - b);
@@ -107,243 +435,128 @@ async function processFiles() {
 
         const resultadosHistoricosComIndice = resultadosHistoricos.map((resultado, indice) => [indice + 1, ...resultado]);
 
-        console.log('Coletando valores de prêmios...');
-        const premios = {
-            megasena: {
-                quadra: parseBrazilianNumber(document.getElementById('megasenaQuadraAnalise').value) || PRIZE_DEFAULTS.megasena.quadra,
-                quina: parseBrazilianNumber(document.getElementById('megasenaQuinaAnalise').value) || PRIZE_DEFAULTS.megasena.quina,
-                sena: parseBrazilianNumber(document.getElementById('megasenaSenaAnalise').value) || PRIZE_DEFAULTS.megasena.sena
-            },
-            quina: {
-                duque: parseBrazilianNumber(document.getElementById('quinaDuqueAnalise').value) || PRIZE_DEFAULTS.quina.duque,
-                terno: parseBrazilianNumber(document.getElementById('quinaTernoAnalise').value) || PRIZE_DEFAULTS.quina.terno,
-                quadra: parseBrazilianNumber(document.getElementById('quinaQuadraAnalise').value) || PRIZE_DEFAULTS.quina.quadra,
-                quina: parseBrazilianNumber(document.getElementById('quinaQuinaAnalise').value) || PRIZE_DEFAULTS.quina.quina
-            },
-            lotofacil: {
-                onze: parseBrazilianNumber(document.getElementById('lotofacilOnzeAnalise')?.value) || PRIZE_DEFAULTS.lotofacil.onze,
-                doze: parseBrazilianNumber(document.getElementById('lotofacilDozeAnalise')?.value) || PRIZE_DEFAULTS.lotofacil.doze,
-                treze: parseBrazilianNumber(document.getElementById('lotofacilTrezeAnalise')?.value) || PRIZE_DEFAULTS.lotofacil.treze,
-                quatorze: parseBrazilianNumber(document.getElementById('lotofacilQuatorzeAnalise')?.value) || PRIZE_DEFAULTS.lotofacil.quatorze,
-                quinze: parseBrazilianNumber(document.getElementById('lotofacilQuinzeAnalise')?.value) || PRIZE_DEFAULTS.lotofacil.quinze
-            }
-        };
-        // Lê o custo da aposta do input correspondente
-        const custoAposta = tipoJogo === 'quina' ?
-            (parseBrazilianNumber(document.getElementById('quinaCustoApostaAnalise').value) || PRIZE_DEFAULTS.quina.custoAposta) :
-            (tipoJogo === 'lotofacil' ?
-                (parseBrazilianNumber(document.getElementById('lotofacilCustoApostaAnalise')?.value) || PRIZE_DEFAULTS.lotofacil.custoAposta) :
-                (parseBrazilianNumber(document.getElementById('megasenaCustoApostaAnalise').value) || PRIZE_DEFAULTS.megasena.custoAposta)
-            );
+        // Coleta os valores dos prêmios e custo da aposta da interface
+        const premios = {};
+        gameConfig.prizeTiers.forEach(tier => {
+            const inputEl = document.getElementById(tier.inputId);
+            premios[tier.key] = parseBrazilianNumber(inputEl?.value) || PRIZE_DEFAULTS[tipoJogo][tier.key];
+        });
+        const custoAposta = parseBrazilianNumber(document.getElementById(gameConfig.costInputId)?.value) || PRIZE_DEFAULTS[tipoJogo].custoAposta;
 
-        console.log('Calculando resultados...');
         progress.textContent = 'Calculando resultados...';
         const resultados = [];
-        let totalDuques = 0, totalTernos = 0, totalQuadras = 0, totalQuinas = 0, totalSenas = 0, totalOnzes = 0, totalDozes = 0, totalTrezes = 0, totalQuatorzes = 0, totalQuinzes = 0;
-        let totalJogosSemDuques = 0, totalJogosSemTernos = 0, totalJogosSemQuadras = 0, totalJogosSemQuinas = 0, totalJogosSemSenas = 0, totalJogosSemOnzes = 0, totalJogosSemDozes = 0, totalJogosSemTrezes = 0, totalJogosSemQuatorzes = 0, totalJogosSemQuinzes = 0; // Para Quina e Mega-Sena (Quadras)
+
+        // Estruturas para armazenar estatísticas agregadas
+        const prizeCountsByFile = {};
+        allUserGamesData.forEach(fileData => {
+            prizeCountsByFile[fileData.fileName] = { semPremio: 0 };
+            gameConfig.prizeTiers.forEach(tier => {
+                prizeCountsByFile[fileData.fileName][tier.key] = 0;
+            });
+        });
+        const totalPrizeCounts = { semPremio: 0 };
+        gameConfig.prizeTiers.forEach(tier => {
+            totalPrizeCounts[tier.key] = 0;
+        });
+
+        const totaisSorteiosSemPremio = {}; // { quadra: 500, quina: 2000, ... }
+        const minMaxAcertos = {}; // { quadra: { min: 0, max: 5 }, ... }
+        const frequenciaPremiosPorSorteio = {}; // { quadra: { 0: 1500, 1: 300, 2: 50 }, ... }
+
+        gameConfig.prizeTiers.forEach(tier => {
+            totaisSorteiosSemPremio[tier.key] = 0;
+            minMaxAcertos[tier.key] = { min: Infinity, max: 0 };
+            frequenciaPremiosPorSorteio[tier.key] = {};
+        });
+
         let totalPremio = 0, totalPremioSemMaximo = 0;
-        let minimoDuques = Infinity, maximoDuques = 0;
-        let minimoTernos = Infinity, maximoTernos = 0;
-        let minimoQuadras = Infinity, maximoQuadras = 0;
-        let minimoQuinas = Infinity, maximoQuinas = 0;
-        let minimoSenas = Infinity, maximoSenas = 0; // Para Mega-Sena
-        let minimoOnzes = Infinity, maximoOnzes = 0;
-        let minimoDozes = Infinity, maximoDozes = 0;
-        let minimoTrezes = Infinity, maximoTrezes = 0;
-        let minimoQuatorzes = Infinity, maximoQuatorzes = 0;
-        let minimoQuinzes = Infinity, maximoQuinzes = 0;
-        
 
-        // Para a nova planilha de Frequência de Prêmios
-        const frequenciaPremiosPorSorteio = { duque: {}, terno: {}, quadra: {}, quina: {}, sena: {}, onze: {}, doze: {}, treze: {}, quatorze: {}, quinze: {} };
-
+        // Loop principal: itera sobre cada sorteio histórico para calcular os resultados
         resultadosHistoricosComIndice.forEach((jogoHistorico, indiceLoop) => {
             if (indiceLoop > 0 && indiceLoop % 100 === 0) { 
                  progress.textContent = `Analisando sorteio ${indiceLoop + 1} de ${resultadosHistoricosComIndice.length}...`;
             }
             const numerosHistoricos = new Set(jogoHistorico.slice(1).map(Number).filter(num => !isNaN(num)));
             
-            // Contadores de prêmios para ESTE sorteio histórico
-            let premiosDuqueNesteSorteio = 0, premiosTernoNesteSorteio = 0, premiosQuadraNesteSorteio = 0, premiosQuinaNesteSorteio = 0, premiosSenaNesteSorteio = 0;
+            // Contadores de prêmios para ESTE sorteio (para o Excel)
+            const premiosNesteSorteio = {};
+            gameConfig.prizeTiers.forEach(tier => {
+                premiosNesteSorteio[tier.key] = 0;
+            });
 
-            // --- INÍCIO DA CORREÇÃO PARA LOTOFÁCIL ---
-            let premiosOnzeNesteSorteio = 0, premiosDozeNesteSorteio = 0, premiosTrezeNesteSorteio = 0, premiosQuatorzeNesteSorteio = 0, premiosQuinzeNesteSorteio = 0;
-            // --- FIM DA CORREÇÃO PARA LOTOFÁCIL ---
+            // Contadores para os gráficos de pizza
+            const premiosNesteSorteioPorArquivo = {};
+            allUserGamesData.forEach(fileData => {
+                premiosNesteSorteioPorArquivo[fileData.fileName] = 0;
+            });
+            let totalPremiosNesteSorteio = 0;
 
-            // Contadores para estatísticas gerais (mínimo/máximo de acertos considerando sub-prêmios)
-            let acertosDuqueConsiderandoSubPremios = 0;
-            let acertosTernoConsiderandoSubPremios = 0;
-            let acertosQuadraConsiderandoSubPremios = 0;
-            let acertosQuinaConsiderandoSubPremios = 0; // Para Mega-Sena
-            let acertosSenaConsiderandoSubPremios = 0; // Para Mega-Sena
-            let acertosOnzeConsiderandoSubPremios = 0; // Para Lotofácil
-            let acertosDozeConsiderandoSubPremios = 0; // Para Lotofácil
-            let acertosTrezeConsiderandoSubPremios = 0; // Para Lotofácil
-            let acertosQuatorzeConsiderandoSubPremios = 0; // Para Lotofácil
-            let acertosQuinzeConsiderandoSubPremios = 0; // Para Lotofácil
-            
-
+            // Compara cada jogo do usuário com o sorteio histórico atual
             jogosUsuarioExpandidos.forEach(jogoDoUsuario => {
-                const numerosJogoDoUsuario = jogoDoUsuario.slice(1).map(Number);
+                const fileName = jogoDoUsuario.file;
+                const numerosJogoDoUsuario = jogoDoUsuario.gameData.slice(1).map(Number);
                 const acertosCount = numerosJogoDoUsuario.filter(num => numerosHistoricos.has(num)).length;
 
-                if (tipoJogo === 'quina') {
-                    if (acertosCount === 2) premiosDuqueNesteSorteio++;
-                    else if (acertosCount === 3) premiosTernoNesteSorteio++;
-                    else if (acertosCount === 4) premiosQuadraNesteSorteio++;
-                    else if (acertosCount === 5) premiosQuinaNesteSorteio++;
-                    
-                    if (acertosCount === 2) acertosDuqueConsiderandoSubPremios++;
-                    if (acertosCount === 3) acertosTernoConsiderandoSubPremios++;
-                    if (acertosCount === 4) acertosQuadraConsiderandoSubPremios++;
-                    if (acertosCount === 5) acertosQuinaConsiderandoSubPremios++;
+                // Encontra a faixa de prêmio correspondente ao número de acertos
+                const tierHit = gameConfig.prizeTiers.find(tier => tier.hits === acertosCount);
+                if (tierHit) {
+                    // Para o Excel (agregado)
+                    premiosNesteSorteio[tierHit.key]++;
 
-                } else if (tipoJogo === 'lotofacil') {
-                    if (acertosCount === 11) premiosOnzeNesteSorteio++;
-                    else if (acertosCount === 12) premiosDozeNesteSorteio++;
-                    else if (acertosCount === 13) premiosTrezeNesteSorteio++;
-                    else if (acertosCount === 14) premiosQuatorzeNesteSorteio++;
-                    else if (acertosCount === 15) premiosQuinzeNesteSorteio++;
-
-                    if (acertosCount === 11) acertosOnzeConsiderandoSubPremios++;
-                    if (acertosCount === 12) acertosDozeConsiderandoSubPremios++;
-                    if (acertosCount === 13) acertosTrezeConsiderandoSubPremios++;
-                    if (acertosCount === 14) acertosQuatorzeConsiderandoSubPremios++;
-                    if (acertosCount === 15) acertosQuinzeConsiderandoSubPremios++;
-
-                } else { // Mega-Sena
-                    if (acertosCount === 4) premiosQuadraNesteSorteio++;
-                    else if (acertosCount === 5) premiosQuinaNesteSorteio++;
-                    else if (acertosCount === 6) premiosSenaNesteSorteio++;
-
-                    if (acertosCount === 4) acertosQuadraConsiderandoSubPremios++;
-                    if (acertosCount === 5) acertosQuinaConsiderandoSubPremios++;
+                    // Para os gráficos de pizza (por arquivo e total)
+                    prizeCountsByFile[fileName][tierHit.key]++;
+                    totalPrizeCounts[tierHit.key]++;
+                    premiosNesteSorteioPorArquivo[fileName]++;
+                    totalPremiosNesteSorteio++;
                 }
             });
 
-            // Registrar frequência de prêmios para a nova planilha
-            if (tipoJogo === 'quina') {
-                frequenciaPremiosPorSorteio.duque[premiosDuqueNesteSorteio] = (frequenciaPremiosPorSorteio.duque[premiosDuqueNesteSorteio] || 0) + 1;
-                frequenciaPremiosPorSorteio.terno[premiosTernoNesteSorteio] = (frequenciaPremiosPorSorteio.terno[premiosTernoNesteSorteio] || 0) + 1;
-                frequenciaPremiosPorSorteio.quadra[premiosQuadraNesteSorteio] = (frequenciaPremiosPorSorteio.quadra[premiosQuadraNesteSorteio] || 0) + 1;
-                frequenciaPremiosPorSorteio.quina[premiosQuinaNesteSorteio] = (frequenciaPremiosPorSorteio.quina[premiosQuinaNesteSorteio] || 0) + 1;
-            } else if (tipoJogo === 'lotofacil') {
-                frequenciaPremiosPorSorteio.onze[premiosOnzeNesteSorteio] = (frequenciaPremiosPorSorteio.onze[premiosOnzeNesteSorteio] || 0) + 1;
-                frequenciaPremiosPorSorteio.doze[premiosDozeNesteSorteio] = (frequenciaPremiosPorSorteio.doze[premiosDozeNesteSorteio] || 0) + 1;
-                frequenciaPremiosPorSorteio.treze[premiosTrezeNesteSorteio] = (frequenciaPremiosPorSorteio.treze[premiosTrezeNesteSorteio] || 0) + 1;
-                frequenciaPremiosPorSorteio.quatorze[premiosQuatorzeNesteSorteio] = (frequenciaPremiosPorSorteio.quatorze[premiosQuatorzeNesteSorteio] || 0) + 1;
-                frequenciaPremiosPorSorteio.quinze[premiosQuinzeNesteSorteio] = (frequenciaPremiosPorSorteio.quinze[premiosQuinzeNesteSorteio] || 0) + 1;
-            } else { // Mega-Sena
-                frequenciaPremiosPorSorteio.quadra[premiosQuadraNesteSorteio] = (frequenciaPremiosPorSorteio.quadra[premiosQuadraNesteSorteio] || 0) + 1;
-                frequenciaPremiosPorSorteio.quina[premiosQuinaNesteSorteio] = (frequenciaPremiosPorSorteio.quina[premiosQuinaNesteSorteio] || 0) + 1;
-                frequenciaPremiosPorSorteio.sena[premiosSenaNesteSorteio] = (frequenciaPremiosPorSorteio.sena[premiosSenaNesteSorteio] || 0) + 1;
+            // Após checar todos os jogos, atualiza contadores "sem prêmio"
+            for (const fileName in premiosNesteSorteioPorArquivo) {
+                if (premiosNesteSorteioPorArquivo[fileName] === 0) {
+                    prizeCountsByFile[fileName].semPremio++;
+                }
+            }
+            if (totalPremiosNesteSorteio === 0) {
+                totalPrizeCounts.semPremio++;
             }
 
+            // Acumula os resultados deste sorteio nas estatísticas globais
             let premioTotalNesteSorteio = 0, premioSemMaximoNesteSorteio = 0;
-            if (tipoJogo === 'quina') {
-                premioTotalNesteSorteio = (premiosDuqueNesteSorteio * premios.quina.duque) + 
-                                         (premiosTernoNesteSorteio * premios.quina.terno) + 
-                                         (premiosQuadraNesteSorteio * premios.quina.quadra) + 
-                                         (premiosQuinaNesteSorteio * premios.quina.quina);
-                premioSemMaximoNesteSorteio = (premiosDuqueNesteSorteio * premios.quina.duque) + 
-                                             (premiosTernoNesteSorteio * premios.quina.terno) + 
-                                             (premiosQuadraNesteSorteio * premios.quina.quadra);
-            } else if (tipoJogo === 'lotofacil') {
-                // Corrigido: soma todos os prêmios de 11 a 15 acertos
-                premioTotalNesteSorteio =
-                    (premiosOnzeNesteSorteio * premios.lotofacil.onze) +
-                    (premiosDozeNesteSorteio * premios.lotofacil.doze) +
-                    (premiosTrezeNesteSorteio * premios.lotofacil.treze) +
-                    (premiosQuatorzeNesteSorteio * premios.lotofacil.quatorze) +
-                    (premiosQuinzeNesteSorteio * premios.lotofacil.quinze);
-                premioSemMaximoNesteSorteio =
-                    (premiosOnzeNesteSorteio * premios.lotofacil.onze) +
-                    (premiosDozeNesteSorteio * premios.lotofacil.doze) +
-                    (premiosTrezeNesteSorteio * premios.lotofacil.treze) +
-                    (premiosQuatorzeNesteSorteio * premios.lotofacil.quatorze);
-            } else { // Mega-Sena
-                premioTotalNesteSorteio = (premiosQuadraNesteSorteio * premios.megasena.quadra) + 
-                                         (premiosQuinaNesteSorteio * premios.megasena.quina) + 
-                                         (premiosSenaNesteSorteio * premios.megasena.sena);
-                premioSemMaximoNesteSorteio = (premiosQuadraNesteSorteio * premios.megasena.quadra) +
-                                             (premiosQuinaNesteSorteio * premios.megasena.quina);
-            }
 
-            // --- INÍCIO DA CORREÇÃO PARA LOTOFÁCIL ---
-            if (tipoJogo === 'lotofacil') {
-                totalOnzes += premiosOnzeNesteSorteio;
-                totalDozes += premiosDozeNesteSorteio;
-                totalTrezes += premiosTrezeNesteSorteio;
-                totalQuatorzes += premiosQuatorzeNesteSorteio;
-                totalQuinzes += premiosQuinzeNesteSorteio;
-            } else {
-                totalDuques += premiosDuqueNesteSorteio;
-                totalTernos += premiosTernoNesteSorteio;
-                totalQuadras += premiosQuadraNesteSorteio;
-                totalQuinas += premiosQuinaNesteSorteio;
-                totalSenas += premiosSenaNesteSorteio;
-            }
-            // --- FIM DA CORREÇÃO PARA LOTOFÁCIL ---
+            gameConfig.prizeTiers.forEach(tier => {
+                const count = premiosNesteSorteio[tier.key];
+                const value = premios[tier.key];
+                
+                // Acumula valor total do prêmio
+                premioTotalNesteSorteio += count * value;
+                if (!tier.isMaxPrize) {
+                    premioSemMaximoNesteSorteio += count * value;
+                }
+
+                // Atualiza min/max de acertos por sorteio
+                minMaxAcertos[tier.key].min = Math.min(minMaxAcertos[tier.key].min, count);
+                minMaxAcertos[tier.key].max = Math.max(minMaxAcertos[tier.key].max, count);
+
+                // Contabiliza sorteios sem prêmios
+                if (count === 0) {
+                    totaisSorteiosSemPremio[tier.key]++;
+                }
+
+                // Registra a frequência de prêmios (ex: 5 sorteios tiveram 2 quadras)
+                frequenciaPremiosPorSorteio[tier.key][count] = (frequenciaPremiosPorSorteio[tier.key][count] || 0) + 1;
+            });
 
             totalPremio += premioTotalNesteSorteio;
             totalPremioSemMaximo += premioSemMaximoNesteSorteio;
 
-            if (tipoJogo === 'quina') {
-                minimoDuques = Math.min(minimoDuques, acertosDuqueConsiderandoSubPremios);
-                maximoDuques = Math.max(maximoDuques, acertosDuqueConsiderandoSubPremios);
-                minimoTernos = Math.min(minimoTernos, acertosTernoConsiderandoSubPremios);
-                maximoTernos = Math.max(maximoTernos, acertosTernoConsiderandoSubPremios);
-                minimoQuadras = Math.min(minimoQuadras, acertosQuadraConsiderandoSubPremios);
-                maximoQuadras = Math.max(maximoQuadras, acertosQuadraConsiderandoSubPremios);
-
-                if (acertosDuqueConsiderandoSubPremios === 0) totalJogosSemDuques++;
-                if (acertosTernoConsiderandoSubPremios === 0) totalJogosSemTernos++;
-                if (acertosQuadraConsiderandoSubPremios === 0) totalJogosSemQuadras++;
-            } else if (tipoJogo === 'lotofacil') {
-                minimoOnzes = Math.min(minimoOnzes, acertosOnzeConsiderandoSubPremios);
-                maximoOnzes = Math.max(maximoOnzes, acertosOnzeConsiderandoSubPremios);
-                minimoDozes = Math.min(minimoDozes, acertosDozeConsiderandoSubPremios);
-                maximoDozes = Math.max(maximoDozes, acertosDozeConsiderandoSubPremios);
-                minimoTrezes = Math.min(minimoTrezes, acertosTrezeConsiderandoSubPremios);
-                maximoTrezes = Math.max(maximoTrezes, acertosTrezeConsiderandoSubPremios);
-                minimoQuatorzes = Math.min(minimoQuatorzes, acertosQuatorzeConsiderandoSubPremios);
-                maximoQuatorzes = Math.max(maximoQuatorzes, acertosQuatorzeConsiderandoSubPremios);
-                minimoQuinzes = Math.min(minimoQuinzes, acertosQuinzeConsiderandoSubPremios);
-                maximoQuinzes = Math.max(maximoQuinzes, acertosQuinzeConsiderandoSubPremios);
-
-                if (acertosOnzeConsiderandoSubPremios === 0) totalJogosSemOnzes++;
-                if (acertosDozeConsiderandoSubPremios === 0) totalJogosSemDozes++;
-                if (acertosTrezeConsiderandoSubPremios === 0) totalJogosSemTrezes++;
-                if (acertosQuatorzeConsiderandoSubPremios === 0) totalJogosSemQuatorzes++;
-                if (acertosQuinzeConsiderandoSubPremios === 0) totalJogosSemQuinzes++;
-            } else { // Mega-Sena
-                minimoQuadras = Math.min(minimoQuadras, acertosQuadraConsiderandoSubPremios);
-                maximoQuadras = Math.max(maximoQuadras, acertosQuadraConsiderandoSubPremios);
-                minimoQuinas = Math.min(minimoQuinas, acertosQuinaConsiderandoSubPremios); 
-                maximoQuinas = Math.max(maximoQuinas, acertosQuinaConsiderandoSubPremios); 
-                if (acertosQuadraConsiderandoSubPremios === 0) totalJogosSemQuadras++;
-            }
-
-            if (tipoJogo === 'quina') {
-                resultados.push([
-                    jogoHistorico[0], // Concurso
-                    premiosDuqueNesteSorteio, premiosTernoNesteSorteio, premiosQuadraNesteSorteio, premiosQuinaNesteSorteio,
-                    premioTotalNesteSorteio
-                ]);
-            } else if (tipoJogo === 'lotofacil') {
-                // Corrigido: adiciona prêmios de 11 a 15 acertos
-                resultados.push([
-                    jogoHistorico[0], // Concurso
-                    premiosOnzeNesteSorteio, premiosDozeNesteSorteio, premiosTrezeNesteSorteio, premiosQuatorzeNesteSorteio, premiosQuinzeNesteSorteio,
-                    premioTotalNesteSorteio
-                ]);
-            } else { // Mega-Sena
-                resultados.push([
-                    jogoHistorico[0], // Concurso
-                    premiosQuadraNesteSorteio, premiosQuinaNesteSorteio, premiosSenaNesteSorteio,
-                    premioTotalNesteSorteio
-                ]);
-            }
+            // Adiciona a linha de resultado para a aba "Prêmios por Sorteio"
+            const linhaResultado = [
+                jogoHistorico[0], // Concurso
+                ...gameConfig.prizeTiers.map(tier => premiosNesteSorteio[tier.key]),
+                premioTotalNesteSorteio
+            ];
+            resultados.push(linhaResultado);
         });
 
         // Contadores para as faixas de percentual de prêmio vs custo
@@ -361,10 +574,7 @@ async function processFiles() {
             acima100: 0,
         };
         // Analisando repetições de agrupamentos internos nos jogos do usuário
-        // Este bloco foi movido para cima para que frequenciaAgrupamentosInternos seja inicializado
-        // antes de ser usado para calcular totalDuquesRepetidosUser, etc.
-        console.log('Analisando repetições internas nos jogos do usuário...');
-        progress.textContent = 'Analisando repetições internas...';
+        progress.textContent = 'Analisando repetições internas dos seus jogos...';
         const frequenciaAgrupamentosInternos = {
             duques: {},
             ternos: {},
@@ -378,8 +588,8 @@ async function processFiles() {
             quinzes: {}  // Para Lotofácil
         };
 
-        jogosUsuarioExpandidos.forEach(jogoComIndice => {
-            const dezenasDoJogo = jogoComIndice.slice(1); // Remove o índice, já estão ordenadas
+        jogosUsuarioExpandidos.forEach(item => {
+            const dezenasDoJogo = item.gameData.slice(1); // Remove o índice, já estão ordenadas
 
             const processarAgrupamentoInterno = (groupSize, groupTypeKey) => {
                 if (dezenasDoJogo.length >= groupSize) {
@@ -410,7 +620,6 @@ async function processFiles() {
         });
 
 
-        console.log('Calculando estatísticas...');
         progress.textContent = 'Calculando estatísticas finais...';
         const numeroJogosHistoricos = resultadosHistoricosComIndice.length;
         const numeroApostasUsuario = jogosUsuarioExpandidos.length;
@@ -441,22 +650,15 @@ async function processFiles() {
         const percFaixa = (count) => numeroJogosHistoricos > 0 ? count / numeroJogosHistoricos : 0;
 
 
-
-        // ROI Corrigido: (Média de Prêmio por Sorteio) / (Custo Total das Apostas do Usuário por Sorteio)
+        // ROI: (Média de Prêmio por Sorteio) / (Custo Total das Apostas do Usuário por Sorteio)
         const roiTotal = custoTotalDasApostasPorSorteio > 0 ? mediaPremioPorSorteio / custoTotalDasApostasPorSorteio : 0;
         const roiSemMaximo = custoTotalDasApostasPorSorteio > 0 ? mediaPremioSemMaximoPorSorteio / custoTotalDasApostasPorSorteio : 0;
-        
-        const mediaDuques = numeroJogosHistoricos > 0 ? totalDuques / numeroJogosHistoricos : 0;
-        const mediaTernos = numeroJogosHistoricos > 0 ? totalTernos / numeroJogosHistoricos : 0;
-        const mediaQuadras = numeroJogosHistoricos > 0 ? totalQuadras / numeroJogosHistoricos : 0;
-        const mediaQuinas = numeroJogosHistoricos > 0 ? totalQuinas / numeroJogosHistoricos : 0;
-        const mediaSenas = numeroJogosHistoricos > 0 ? totalSenas / numeroJogosHistoricos : 0;
-        const mediaOnzes = numeroJogosHistoricos > 0 ? totalOnzes / numeroJogosHistoricos : 0;
-        const mediaDozes = numeroJogosHistoricos > 0 ? totalDozes / numeroJogosHistoricos : 0;
-        const mediaTrezes = numeroJogosHistoricos > 0 ? totalTrezes / numeroJogosHistoricos : 0;
-        const mediaQuatorzes = numeroJogosHistoricos > 0 ? totalQuatorzes / numeroJogosHistoricos : 0;
-        const mediaQuinzes = numeroJogosHistoricos > 0 ? totalQuinzes / numeroJogosHistoricos : 0;
 
+        // Calcula a média de prêmios por sorteio para cada faixa
+        const mediasPremios = {};
+        gameConfig.prizeTiers.forEach(tier => {
+            mediasPremios[tier.key] = numeroJogosHistoricos > 0 ? totalPrizeCounts[tier.key] / numeroJogosHistoricos : 0;
+        });
 
         // Calcular totais de agrupamentos repetidos no jogo do usuário
         let totalDuquesRepetidosUser = 0;
@@ -502,32 +704,79 @@ async function processFiles() {
             if (frequenciaAgrupamentosInternos.quinzes[key] > 1) totalQuinzesRepetidasUser++;
         }
 
+        // --- START PIE CHARTS RENDERING LOGIC ---
+        if (pieChartsWrapper && pieChartsGrid) {
+            pieChartsWrapper.style.display = 'block';
+            let chartCounter = 0;
+
+            const renderChartForData = (counts, title) => {
+                const chartItemContainer = document.createElement('div');
+                chartItemContainer.className = 'pie-chart-item';
+                chartItemContainer.id = `pie-chart-item-${chartCounter++}`;
+                pieChartsGrid.appendChild(chartItemContainer);
+
+                renderPrizeDistributionChart(chartItemContainer, { counts, gameConfig }, title);
+            };
+
+            // Render chart for each file
+            for (const fileName in prizeCountsByFile) {
+                renderChartForData(prizeCountsByFile[fileName], fileName);
+            }
+
+            // Render summary chart if more than one file was analyzed
+            if (Object.keys(prizeCountsByFile).length > 1) {
+                renderChartForData(totalPrizeCounts, 'Resumo de Todos os Jogos');
+            }
+        }
+        // --- END PIE CHARTS RENDERING LOGIC ---
+
+        // --- Display Simulation Universe ---
+        if (simUniverseWrapper) {
+            const simUniverseDisplay = document.getElementById('simulation-universe-display-panel');
+            if (simUniverseDisplay) {
+                simUniverseWrapper.style.display = 'block';
+                simUniverseDisplay.innerHTML = '';
+                ballUniverse.sort((a,b) => a-b).forEach(ballNum => {
+                    const ballEl = document.createElement('div');
+                    ballEl.className = 'ball active';
+                    ballEl.textContent = String(ballNum).padStart(2, '0');
+                    simUniverseDisplay.appendChild(ballEl);
+                });
+            }
+        }
+
+        // Monta a aba de Resumo
+        const totaisPremios = {}; // Recalculate for Excel summary, as it was removed from the main loop aggregation
+        gameConfig.prizeTiers.forEach(tier => {
+            totaisPremios[tier.key] = totalPrizeCounts[tier.key]; // Use the already calculated total counts
+        });
+
         let dadosResumo = [];
         if (tipoJogo === 'quina') {
-            dadosResumo = [
+            dadosResumo = [ // ... (conteúdo da aba resumo)
                 ['Descrição', 'Valor'],
                 ['Quantidade dos Meus Jogos (Simples)', numeroApostasUsuario],
                 ['Quantidade de Sorteios Históricos Analisados', numeroJogosHistoricos],
                 ['Custo Total das Minhas Apostas (por sorteio)', custoTotalDasApostasPorSorteio],
                 ['Custo de uma Aposta Simples', custoAposta],
                 ['Bolas Utilizadas nos Meus Jogos (após expansão)', stringDezenasUnicasUsuario],
-                ['Média de Prêmios de Duque por Sorteio', mediaDuques],
-                ['Média de Prêmios de Terno por Sorteio', mediaTernos],
-                ['Média de Prêmios de Quadra por Sorteio', mediaQuadras],
-                ['Média de Prêmios de Quina por Sorteio', mediaQuinas],
+                ['Média de Prêmios de Duque por Sorteio', mediasPremios.duque],
+                ['Média de Prêmios de Terno por Sorteio', mediasPremios.terno],
+                ['Média de Prêmios de Quadra por Sorteio', mediasPremios.quadra],
+                ['Média de Prêmios de Quina por Sorteio', mediasPremios.quina],
                 ['Média de Valor Total de Prêmio por Sorteio', mediaPremioPorSorteio],
                 ['Média de Valor Total de Prêmio por Sorteio (Sem Quina)', mediaPremioSemMaximoPorSorteio],
                 ['Retorno Sobre Investimento (ROI Total %)', roiTotal],
                 ['Retorno Sobre Investimento (ROI Sem Quina %)', roiSemMaximo],
-                ['Mínimo de Acertos de Duque em um Sorteio', minimoDuques === Infinity ? 0 : minimoDuques],
-                ['Máximo de Acertos de Duque em um Sorteio', maximoDuques],
-                ['Mínimo de Acertos de Terno em um Sorteio', minimoTernos === Infinity ? 0 : minimoTernos],
-                ['Máximo de Acertos de Terno em um Sorteio', maximoTernos],
-                ['Mínimo de Acertos de Quadra em um Sorteio', minimoQuadras === Infinity ? 0 : minimoQuadras],
-                ['Máximo de Acertos de Quadra em um Sorteio', maximoQuadras],
-                ['Sorteios sem Nenhum Acerto de Duque', totalJogosSemDuques],
-                ['Sorteios sem Nenhum Acerto de Terno', totalJogosSemTernos],
-                ['Sorteios sem Nenhum Acerto de Quadra', totalJogosSemQuadras],
+                ['Mínimo de Acertos de Duque em um Sorteio', minMaxAcertos.duque.min === Infinity ? 0 : minMaxAcertos.duque.min],
+                ['Máximo de Acertos de Duque em um Sorteio', minMaxAcertos.duque.max],
+                ['Mínimo de Acertos de Terno em um Sorteio', minMaxAcertos.terno.min === Infinity ? 0 : minMaxAcertos.terno.min],
+                ['Máximo de Acertos de Terno em um Sorteio', minMaxAcertos.terno.max],
+                ['Mínimo de Acertos de Quadra em um Sorteio', minMaxAcertos.quadra.min === Infinity ? 0 : minMaxAcertos.quadra.min],
+                ['Máximo de Acertos de Quadra em um Sorteio', minMaxAcertos.quadra.max],
+                ['Sorteios sem Nenhum Acerto de Duque', totaisSorteiosSemPremio.duque],
+                ['Sorteios sem Nenhum Acerto de Terno', totaisSorteiosSemPremio.terno],
+                ['Sorteios sem Nenhum Acerto de Quadra', totaisSorteiosSemPremio.quadra],
                 ['Total de Duques Distintos Repetidos (nos seus jogos)', totalDuquesRepetidosUser],
                 ['Total de Ternos Distintos Repetidos (nos seus jogos)', totalTernosRepetidosUser],
                 ['Total de Quadras Distintas Repetidas (nos seus jogos)', totalQuadrasRepetidasUser],
@@ -545,37 +794,37 @@ async function processFiles() {
                 ['% Sorteios com Prêmio >= 100% do Custo', percFaixa(faixasCusto.acima100)],
             ];
         } else if (tipoJogo === 'lotofacil') {
-            dadosResumo = [
+            dadosResumo = [ // ... (conteúdo da aba resumo)
                 ['Descrição', 'Valor'],
                 ['Quantidade dos Meus Jogos (Simples)', numeroApostasUsuario],
                 ['Quantidade de Sorteios Históricos Analisados', numeroJogosHistoricos],
                 ['Custo Total das Minhas Apostas (por sorteio)', custoTotalDasApostasPorSorteio],
                 ['Custo de uma Aposta Simples', custoAposta],
                 ['Bolas Utilizadas nos Meus Jogos (após expansão)', stringDezenasUnicasUsuario],
-                ['Média de Prêmios de 11 Acertos por Sorteio', mediaOnzes],
-                ['Média de Prêmios de 12 Acertos por Sorteio', mediaDozes],
-                ['Média de Prêmios de 13 Acertos por Sorteio', mediaTrezes],
-                ['Média de Prêmios de 14 Acertos por Sorteio', mediaQuatorzes],
-                ['Média de Prêmios de 15 Acertos por Sorteio', mediaQuinzes],
+                ['Média de Prêmios de 11 Acertos por Sorteio', mediasPremios.onze],
+                ['Média de Prêmios de 12 Acertos por Sorteio', mediasPremios.doze],
+                ['Média de Prêmios de 13 Acertos por Sorteio', mediasPremios.treze],
+                ['Média de Prêmios de 14 Acertos por Sorteio', mediasPremios.quatorze],
+                ['Média de Prêmios de 15 Acertos por Sorteio', mediasPremios.quinze],
                 ['Média de Valor Total de Prêmio por Sorteio', mediaPremioPorSorteio],
                 ['Média de Valor Total de Prêmio por Sorteio (Sem 15 Acertos)', mediaPremioSemMaximoPorSorteio],
                 ['Retorno Sobre Investimento (ROI Total %)', roiTotal],
                 ['Retorno Sobre Investimento (ROI Sem 15 Acertos %)', roiSemMaximo],
-                ['Mínimo de Acertos de 11 em um Sorteio', minimoOnzes === Infinity ? 0 : minimoOnzes],
-                ['Máximo de Acertos de 11 em um Sorteio', maximoOnzes],
-                ['Mínimo de Acertos de 12 em um Sorteio', minimoDozes === Infinity ? 0 : minimoDozes],
-                ['Máximo de Acertos de 12 em um Sorteio', maximoDozes],
-                ['Mínimo de Acertos de 13 em um Sorteio', minimoTrezes === Infinity ? 0 : minimoTrezes],
-                ['Máximo de Acertos de 13 em um Sorteio', maximoTrezes],
-                ['Mínimo de Acertos de 14 em um Sorteio', minimoQuatorzes === Infinity ? 0 : minimoQuatorzes],
-                ['Máximo de Acertos de 14 em um Sorteio', maximoQuatorzes],
-                ['Mínimo de Acertos de 15 em um Sorteio', minimoQuinzes === Infinity ? 0 : minimoQuinzes],
-                ['Máximo de Acertos de 15 em um Sorteio', maximoQuinzes],
-                ['Sorteios sem Nenhum Acerto de 11', totalJogosSemOnzes],
-                ['Sorteios sem Nenhum Acerto de 12', totalJogosSemDozes],
-                ['Sorteios sem Nenhum Acerto de 13', totalJogosSemTrezes],
-                ['Sorteios sem Nenhum Acerto de 14', totalJogosSemQuatorzes],
-                ['Sorteios sem Nenhum Acerto de 15', totalJogosSemQuinzes],
+                ['Mínimo de Acertos de 11 em um Sorteio', minMaxAcertos.onze.min === Infinity ? 0 : minMaxAcertos.onze.min],
+                ['Máximo de Acertos de 11 em um Sorteio', minMaxAcertos.onze.max],
+                ['Mínimo de Acertos de 12 em um Sorteio', minMaxAcertos.doze.min === Infinity ? 0 : minMaxAcertos.doze.min],
+                ['Máximo de Acertos de 12 em um Sorteio', minMaxAcertos.doze.max],
+                ['Mínimo de Acertos de 13 em um Sorteio', minMaxAcertos.treze.min === Infinity ? 0 : minMaxAcertos.treze.min],
+                ['Máximo de Acertos de 13 em um Sorteio', minMaxAcertos.treze.max],
+                ['Mínimo de Acertos de 14 em um Sorteio', minMaxAcertos.quatorze.min === Infinity ? 0 : minMaxAcertos.quatorze.min],
+                ['Máximo de Acertos de 14 em um Sorteio', minMaxAcertos.quatorze.max],
+                ['Mínimo de Acertos de 15 em um Sorteio', minMaxAcertos.quinze.min === Infinity ? 0 : minMaxAcertos.quinze.min],
+                ['Máximo de Acertos de 15 em um Sorteio', minMaxAcertos.quinze.max],
+                ['Sorteios sem Nenhum Acerto de 11', totaisSorteiosSemPremio.onze],
+                ['Sorteios sem Nenhum Acerto de 12', totaisSorteiosSemPremio.doze],
+                ['Sorteios sem Nenhum Acerto de 13', totaisSorteiosSemPremio.treze],
+                ['Sorteios sem Nenhum Acerto de 14', totaisSorteiosSemPremio.quatorze],
+                ['Sorteios sem Nenhum Acerto de 15', totaisSorteiosSemPremio.quinze],
                 ['Total de Onzes Distintos Repetidos (nos seus jogos)', totalOnzesRepetidasUser],
                 ['Total de Dozes Distintos Repetidos (nos seus jogos)', totalDozesRepetidasUser],
                 ['Total de Trezes Distintos Repetidos (nos seus jogos)', totalTrezesRepetidasUser],
@@ -594,25 +843,25 @@ async function processFiles() {
                 ['% Sorteios com Prêmio >= 100% do Custo', percFaixa(faixasCusto.acima100)],
             ];
         } else { // Mega-Sena
-            dadosResumo = [
+            dadosResumo = [ // ... (conteúdo da aba resumo)
                 ['Descrição', 'Valor'],
                 ['Quantidade dos Meus Jogos (Simples)', numeroApostasUsuario],
                 ['Quantidade de Sorteios Históricos Analisados', numeroJogosHistoricos],
                 ['Custo Total das Minhas Apostas (por sorteio)', custoTotalDasApostasPorSorteio],
                 ['Custo de uma Aposta Simples', custoAposta],
                 ['Bolas Utilizadas nos Meus Jogos (após expansão)', stringDezenasUnicasUsuario],
-                ['Média de Prêmios de Quadra por Sorteio', mediaQuadras],
-                ['Média de Prêmios de Quina por Sorteio', mediaQuinas],
-                ['Média de Prêmios de Sena por Sorteio', mediaSenas],
+                ['Média de Prêmios de Quadra por Sorteio', mediasPremios.quadra],
+                ['Média de Prêmios de Quina por Sorteio', mediasPremios.quina],
+                ['Média de Prêmios de Sena por Sorteio', mediasPremios.sena],
                 ['Média de Valor Total de Prêmio por Sorteio', mediaPremioPorSorteio],
                 ['Média de Valor Total de Prêmio por Sorteio (Sem Sena)', mediaPremioSemMaximoPorSorteio],
                 ['Retorno Sobre Investimento (ROI Total %)', roiTotal],
                 ['Retorno Sobre Investimento (ROI Sem Sena %)', roiSemMaximo],
-                ['Mínimo de Acertos de Quadra em um Sorteio', minimoQuadras === Infinity ? 0 : minimoQuadras],
-                ['Máximo de Acertos de Quadra em um Sorteio', maximoQuadras],
-                ['Mínimo de Acertos de Quina em um Sorteio', minimoQuinas === Infinity ? 0 : minimoQuinas],
-                ['Máximo de Acertos de Quina em um Sorteio', maximoQuinas],
-                ['Sorteios sem Nenhum Acerto de Quadra', totalJogosSemQuadras],
+                ['Mínimo de Acertos de Quadra em um Sorteio', minMaxAcertos.quadra.min === Infinity ? 0 : minMaxAcertos.quadra.min],
+                ['Máximo de Acertos de Quadra em um Sorteio', minMaxAcertos.quadra.max],
+                ['Mínimo de Acertos de Quina em um Sorteio', minMaxAcertos.quina.min === Infinity ? 0 : minMaxAcertos.quina.min],
+                ['Máximo de Acertos de Quina em um Sorteio', minMaxAcertos.quina.max],
+                ['Sorteios sem Nenhum Acerto de Quadra', totaisSorteiosSemPremio.quadra],
                 // Para Mega-Sena, faz sentido mostrar apenas a partir de Quadras repetidas, mas podemos manter a estrutura
                 ['Total de Quadras Distintas Repetidas (nos seus jogos)', totalQuadrasRepetidasUser],
                 ['Total de Quinas Distintas Repetidas (nos seus jogos)', totalQuinasRepetidasUser],
@@ -630,39 +879,29 @@ async function processFiles() {
             ];
         }
 
-        // Criação do workbook (deixe apenas UMA vez, ANTES de qualquer uso de XLSX.utils.book_append_sheet)
+        // Cria o workbook e a primeira aba (Resumo)
         const wb = XLSX.utils.book_new();
-
-        // Criação da planilha de Resumo
         const planilhaResumo = XLSX.utils.aoa_to_sheet(dadosResumo);
         planilhaResumo['!cols'] = [{ wch: 50 }, { wch: 30 }];
         XLSX.utils.book_append_sheet(wb, planilhaResumo, 'Resumo');
 
-        console.log('Gerando planilhas...');
         progress.textContent = 'Gerando arquivo Excel...';
-        let dadosDetalhado = [];
-        if (tipoJogo === 'quina') {
-            dadosDetalhado = [
-                ['Sorteio Histórico', 'Prêmios de Duque', 'Prêmios de Terno', 'Prêmios de Quadra', 'Prêmios de Quina', 'Valor Total de Prêmio no Sorteio']
-            ].concat(resultados);
-        } else if (tipoJogo === 'lotofacil') {
-            dadosDetalhado = [
-                ['Sorteio Histórico', 'Prêmios de 11 Acertos', 'Prêmios de 12 Acertos', 'Prêmios de 13 Acertos', 'Prêmios de 14 Acertos', 'Prêmios de 15 Acertos', 'Valor Total de Prêmio no Sorteio']
-            ].concat(resultados);
-        } else { // Mega-Sena
-            dadosDetalhado = [
-                ['Sorteio Histórico', 'Prêmios de Quadra', 'Prêmios de Quina', 'Prêmios de Sena', 'Valor Total de Prêmio no Sorteio']
-            ].concat(resultados);
-        }
 
-        // CORREÇÃO: criar a planilha antes de formatar as células
+        // Cria a aba "Prêmios por Sorteio"
+        const prizeHeaders = gameConfig.prizeTiers.map(tier => `Prêmios de ${tier.key.charAt(0).toUpperCase() + tier.key.slice(1)}`);
+        const dadosDetalhado = [
+            ['Sorteio Histórico', ...prizeHeaders, 'Valor Total de Prêmio no Sorteio']
+        ].concat(resultados);
+
         const planilhaDetalhado = XLSX.utils.aoa_to_sheet(dadosDetalhado);
 
-        // Remova esta linha duplicada (NÃO declare novamente o wb!):
-        // const wb = XLSX.utils.book_new();
+        // Formata as células da aba "Prêmios por Sorteio"
+        const premioColIndex = gameConfig.prizeTiers.length + 1;
+        const colWidthsDetalhado = [{wch: 15}];
+        gameConfig.prizeTiers.forEach(() => colWidthsDetalhado.push({wch: 18}));
+        colWidthsDetalhado.push({wch: 25});
+        planilhaDetalhado['!cols'] = colWidthsDetalhado;
 
-        // Corrige o índice da coluna de prêmio para Lotofácil
-        const premioColIndex = tipoJogo === 'quina' ? 5 : (tipoJogo === 'lotofacil' ? 6 : 4); 
         for (let r = 1; r < dadosDetalhado.length; r++) { 
             for (let c = 0; c < dadosDetalhado[0].length; c++) { 
                 const cellRef = XLSX.utils.encode_cell({r: r, c: c});
@@ -678,48 +917,45 @@ async function processFiles() {
                 }
             }
         }
-        planilhaDetalhado['!cols'] = (tipoJogo === 'quina' ? 
-            [{wch: 15}, {wch: 18}, {wch: 18}, {wch: 18}, {wch: 18}, {wch: 25}] :
-            (tipoJogo === 'lotofacil' ?
-                [{wch: 15}, {wch: 18}, {wch: 18}, {wch: 18}, {wch: 18}, {wch: 25}] :
-                [{wch: 15}, {wch: 18}, {wch: 18}, {wch: 18}, {wch: 25}] 
-            )
-        );
         XLSX.utils.book_append_sheet(wb, planilhaDetalhado, 'Prêmios por Sorteio');
 
-        // Remova esta linha duplicada (NÃO declare novamente o wb!):
-        // const wb = XLSX.utils.book_new();
+        // Cria uma aba para cada arquivo de jogo original do usuário
+        allUserGamesData.forEach(fileData => {
+            const maxDezenasOriginais = Math.max(0, ...fileData.originalGames.map(jogo => jogo.length));
+            const dadosOriginais = [
+                ['Índice Original', ...Array.from({length: maxDezenasOriginais}, (_, i) => `Dezena ${i + 1}`)]
+            ].concat(fileData.originalGames.map((jogo, indice) => {
+                const dezenasOrdenadas = [...jogo].sort((a, b) => a - b);
+                return [indice + 1, ...dezenasOrdenadas, ...Array(Math.max(0, maxDezenasOriginais - dezenasOrdenadas.length)).fill('')];
+            }));
 
-        // Adicione esta linha para definir dadosOriginais antes de usá-lo:
-        const maxDezenasOriginais = Math.max(0, ...jogosUsuario.map(jogo => jogo.length));
-        const dadosOriginais = [
-            ['Índice Original', ...Array.from({length: maxDezenasOriginais}, (_, i) => `Dezena ${i + 1}`)]
-        ].concat(jogosUsuario.map((jogo, indice) => {
-            const dezenasOrdenadas = [...jogo].sort((a, b) => a - b);
-            return [indice + 1, ...dezenasOrdenadas, ...Array(Math.max(0, maxDezenasOriginais - dezenasOrdenadas.length)).fill('')];
-        }));
-
-        const planilhaOriginais = XLSX.utils.aoa_to_sheet(dadosOriginais);
-        if (dadosOriginais.length > 1 && dadosOriginais[0].length > 1) {
-            for (let r = 1; r < dadosOriginais.length; r++) {
-                for (let c = 1; c < dadosOriginais[0].length; c++) {
-                    const cellRef = XLSX.utils.encode_cell({r: r, c: c});
-                    if (planilhaOriginais[cellRef] && planilhaOriginais[cellRef].v !== '' && planilhaOriginais[cellRef].v !== null) {
-                        planilhaOriginais[cellRef].t = 'n';
-                        planilhaOriginais[cellRef].z = '00';
+            const planilhaOriginais = XLSX.utils.aoa_to_sheet(dadosOriginais);
+            if (dadosOriginais.length > 1 && dadosOriginais[0].length > 1) {
+                for (let r = 1; r < dadosOriginais.length; r++) {
+                    for (let c = 1; c < dadosOriginais[0].length; c++) {
+                        const cellRef = XLSX.utils.encode_cell({r: r, c: c});
+                        if (planilhaOriginais[cellRef] && planilhaOriginais[cellRef].v !== '' && planilhaOriginais[cellRef].v !== null) {
+                            planilhaOriginais[cellRef].t = 'n';
+                            planilhaOriginais[cellRef].z = '00';
+                        }
                     }
                 }
             }
-        }
-        planilhaOriginais['!cols'] = [{wch:15}, ...Array(maxDezenasOriginais).fill({ wch: 10 })];
-        XLSX.utils.book_append_sheet(wb, planilhaOriginais, 'Meus Jogos Originais');
+            planilhaOriginais['!cols'] = [{wch:15}, ...Array(maxDezenasOriginais).fill({ wch: 10 })];
 
+            // Cria um nome de aba válido e curto
+            let sheetName = fileData.fileName.replace(/\.xlsx$/i, '').replace(/[\/\\?*\[\]]/g, '');
+            sheetName = sheetName.substring(0, 31);
+            XLSX.utils.book_append_sheet(wb, planilhaOriginais, sheetName);
+        });
+
+        // Cria a aba "Meus Jogos Expandidos", se houver
         if (temJogosExpandidos) {
             const dadosModificados = [
-                ['Índice Expandido', ...Array.from({length: numerosEsperados}, (_, i) => `Dezena ${i + 1}`)]
-            ].concat(jogosUsuarioExpandidos.map(jogo => {
-                const [indice, ...dezenas] = jogo;
-                return [indice, ...dezenas.sort((a,b) => a - b)];
+                ['Índice Original', 'Arquivo Original', ...Array.from({length: gameConfig.expectedNumbers}, (_, i) => `Dezena ${i + 1}`)]
+            ].concat(jogosUsuarioExpandidos.map(item => {
+                const [indice, ...dezenas] = item.gameData;
+                return [indice, item.file, ...dezenas];
             }));
             const planilhaModificados = XLSX.utils.aoa_to_sheet(dadosModificados);
              for (let r = 1; r < dadosModificados.length; r++) {
@@ -731,7 +967,7 @@ async function processFiles() {
                     }
                 }
             }
-            planilhaModificados['!cols'] = [{wch:15}, ...Array(numerosEsperados).fill({ wch: 10 })];
+            planilhaModificados['!cols'] = [{wch:15}, {wch:30}, ...Array(gameConfig.expectedNumbers).fill({ wch: 10 })];
             XLSX.utils.book_append_sheet(wb, planilhaModificados, 'Meus Jogos Expandidos');
         }
 
@@ -777,23 +1013,11 @@ async function processFiles() {
             dadosFrequencia.push([]); // Linha em branco para separar seções
         };
 
-        if (tipoJogo === 'quina') {
-            processarFrequenciaTipo('Duque', frequenciaPremiosPorSorteio.duque, 'duque');
-            processarFrequenciaTipo('Terno', frequenciaPremiosPorSorteio.terno, 'terno');
-            processarFrequenciaTipo('Quadra', frequenciaPremiosPorSorteio.quadra, 'quadra');
-            processarFrequenciaTipo('Quina (Prêmio Máximo)', frequenciaPremiosPorSorteio.quina, 'quina');
-        } else if (tipoJogo === 'lotofacil') {
-            processarFrequenciaTipo('11 Acertos', frequenciaPremiosPorSorteio.onze, 'onze');
-            processarFrequenciaTipo('12 Acertos', frequenciaPremiosPorSorteio.doze, 'doze');
-            processarFrequenciaTipo('13 Acertos', frequenciaPremiosPorSorteio.treze, 'treze');
-            processarFrequenciaTipo('14 Acertos', frequenciaPremiosPorSorteio.quatorze, 'quatorze');
-            processarFrequenciaTipo('15 Acertos (Prêmio Máximo)', frequenciaPremiosPorSorteio.quinze, 'quinze');
-
-        } else { // Mega-Sena
-            processarFrequenciaTipo('Quadra', frequenciaPremiosPorSorteio.quadra, 'quadra');
-            processarFrequenciaTipo('Quina', frequenciaPremiosPorSorteio.quina, 'quina');
-            processarFrequenciaTipo('Sena (Prêmio Máximo)', frequenciaPremiosPorSorteio.sena, 'sena');
-        }
+        gameConfig.prizeTiers.forEach(tier => {
+            const nomeAmigavel = tier.key.charAt(0).toUpperCase() + tier.key.slice(1);
+            const nomeFinal = tier.isMaxPrize ? `${nomeAmigavel} (Prêmio Máximo)` : nomeAmigavel;
+            processarFrequenciaTipo(nomeFinal, frequenciaPremiosPorSorteio[tier.key], tier.key);
+        });
         
         if (dadosFrequencia.length > 2) { 
             const planilhaFrequencia = XLSX.utils.aoa_to_sheet(dadosFrequencia);
@@ -855,17 +1079,21 @@ async function processFiles() {
             XLSX.utils.book_append_sheet(wb, planilhaRepetidosInternos, 'Repetidos no Meu Jogo');
         }
 
-        console.log('Escrevendo arquivo Excel...');
-        let nomeOriginalArquivoUsuario = document.getElementById('userFileAnalise').files[0].name;
-        if (nomeOriginalArquivoUsuario.toLowerCase().endsWith('.xlsx')) {
-            nomeOriginalArquivoUsuario = nomeOriginalArquivoUsuario.slice(0, -5);
-        }
-        XLSX.writeFile(wb, `Relatorio_${tipoJogo}_${nomeOriginalArquivoUsuario}.xlsx`);
-        status.textContent = 'Relatório gerado com sucesso!';
+        // Store workbook and report data globally instead of saving immediately
+        const filename = `Relatorio_Analise_${tipoJogo}.xlsx`;
+        window.analysisWorkbook = { wb, filename };
+        window.analysisReportData = { dadosResumo, tipoJogo }; // Store data for PDF
+
+        // Show export buttons
+        if (excelBtn) excelBtn.style.display = 'inline-flex';
+        if (pizzaPdfBtn) pizzaPdfBtn.style.display = 'inline-flex';
+        // The comparative chart button is handled by charts.js
+
+        status.textContent = 'Análise concluída! Gráficos de pizza gerados. Você já pode salvar o relatório em Excel ou PDF.';
         progress.textContent = '';
     } catch (error) {
         console.error('Erro ao processar arquivos:', error);
-        status.textContent = 'Erro: ' + error.message;
+        status.textContent = `Erro: ${error.message}`;
         progress.textContent = '';
         status.classList.add('error');
     } finally {
@@ -873,4 +1101,4 @@ async function processFiles() {
     }
 }
 
-export { processFiles };
+export { executeAnalysis, saveAnalysisToExcel, printPieChartsToPDF };

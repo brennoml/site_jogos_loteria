@@ -43,55 +43,113 @@ function combinations(arr, k) {
  * @param {boolean} [replace=false] - Se permite reposição.
  * @returns {Array} Elementos selecionados.
  */
-function randomChoice(arr, weights, size, replace = false) {
+function randomChoice(arr, weights, size, replace = false) {    
     if (arr.length === 0 || size === 0) return [];
+
+    // Caso 1: Amostragem simples (sem pesos)
+    if (!weights) {
+        const result = [];
+        const arrCopy = [...arr];
+        const len = arrCopy.length;
+        const numToSample = Math.min(size, len);
+
+        for (let i = 0; i < numToSample; i++) {
+            const randomIndex = Math.floor(Math.random() * (replace ? len : arrCopy.length));
+            const picked = replace ? arrCopy[randomIndex] : arrCopy.splice(randomIndex, 1)[0];
+            result.push(picked);
+        }
+        return result;
+    }
+
+    // Caso 2: Amostragem com pesos
     if (arr.length !== weights.length) {
-        console.error("Array e pesos devem ter o mesmo tamanho para randomChoice.");
-        // Fallback: escolha aleatória sem pesos se os pesos forem inválidos
-        const fallbackResult = [];
-        const arrCopyForFallback = [...arr];
-        for (let i = 0; i < Math.min(size, arrCopyForFallback.length); i++) {
-            const randomIndex = Math.floor(Math.random() * arrCopyForFallback.length);
-            fallbackResult.push(arrCopyForFallback[randomIndex]);
-            if(!replace) arrCopyForFallback.splice(randomIndex, 1);
-        }
-        return fallbackResult;
+        console.error("Array e pesos devem ter o mesmo tamanho para randomChoice com pesos.");
+        return randomChoice(arr, null, size, replace); // Fallback para amostragem simples
     }
 
-    // Sempre opera em cópia para ser mais seguro
-    const arrCopyInternal = [...arr];
-    const weightsCopyInternal = [...weights];
-    let totalWeightInternal = weightsCopyInternal.reduce((a, b) => a + b, 0);
-    const resultInternal = [];
+    const result = [];
+    const arrCopy = [...arr];
+    const weightsCopy = [...weights];
+    let totalWeight = weightsCopy.reduce((a, b) => a + b, 0);
 
-    for (let k_loop = 0; k_loop < size; k_loop++) {
-        if (arrCopyInternal.length === 0 || totalWeightInternal <= 0) break;
-        const r_internal = Math.random() * totalWeightInternal;
-        let acc_internal = 0;
-        let idx_internal = -1;
-        for (let j_loop = 0; j_loop < arrCopyInternal.length; j_loop++) {
-            acc_internal += weightsCopyInternal[j_loop];
-            if (r_internal <= acc_internal) {
-                idx_internal = j_loop;
-                break;
-            }
-        }
-        if (idx_internal === -1 && arrCopyInternal.length > 0) { // Fallback
-            idx_internal = Math.floor(Math.random() * arrCopyInternal.length);
-        }
-
-        if (idx_internal !== -1) {
-            resultInternal.push(arrCopyInternal[idx_internal]);
-            if (!replace) {
-                totalWeightInternal -= weightsCopyInternal[idx_internal];
-                arrCopyInternal.splice(idx_internal, 1);
-                weightsCopyInternal.splice(idx_internal, 1);
+    for (let i = 0; i < size; i++) {
+        if (arrCopy.length === 0 || totalWeight <= 0) break;
+        const r = Math.random() * totalWeight;
+        let acc = 0;
+        for (let j = 0; j < arrCopy.length; j++) {
+            acc += weightsCopy[j];
+            if (r <= acc) {
+                result.push(arrCopy[j]);
+                if (!replace) {
+                    totalWeight -= weightsCopy[j];
+                    arrCopy.splice(j, 1);
+                    weightsCopy.splice(j, 1);
+                }
+                break; // Sai do loop interno e vai para a próxima amostragem
             }
         }
     }
-    return resultInternal;
+    return result;
 }
 
+/**
+ * Gera combinações de tamanho k a partir de um array de forma iterativa,
+ * sem armazenar todas em memória. Ideal para grandes volumes de combinações.
+ * @param {Array} arr - Array de entrada.
+ * @param {number} k - Tamanho das combinações.
+ * @returns {Generator<Array<number>>} Um gerador que produz cada combinação.
+ */
+function* combinationsGenerator(arr, k) {
+    if (k < 0 || k > arr.length || k === 0) {
+        if (k === 0) yield [];
+        return;
+    }
+
+    const n = arr.length;
+    const indices = Array.from({ length: k }, (_, i) => i);
+
+    while (true) {
+        yield indices.map(i => arr[i]);
+
+        let i = k - 1;
+        while (i >= 0 && indices[i] === i + n - k) {
+            i--;
+        }
+
+        if (i < 0) {
+            return;
+        }
+
+        indices[i]++;
+        for (let j = i + 1; j < k; j++) {
+            indices[j] = indices[j - 1] + 1;
+        }
+    }
+}
+
+/**
+ * Calcula o número de combinações (n choose k) sem gerar as combinações.
+ * @param {number} n - O tamanho total do conjunto.
+ * @param {number} k - O tamanho do subconjunto.
+ * @returns {number} O número de combinações possíveis.
+ */
+function combinationsCount(n, k) {
+    if (k < 0 || k > n) {
+        return 0;
+    }
+    if (k === 0 || k === n) {
+        return 1;
+    }
+    // Otimização: C(n, k) === C(n, n-k)
+    if (k > n / 2) {
+        k = n - k;
+    }
+    let res = 1;
+    for (let i = 1; i <= k; i++) {
+        res = res * (n - i + 1) / i;
+    }
+    return Math.round(res); // Usa Math.round para lidar com imprecisões de ponto flutuante
+}
 
 /**
  * Obtém subconjuntos de tamanho k de um jogo.
@@ -165,29 +223,57 @@ function formatBrazilianPercentage(value) {
  * @param {number} jogosGerados - Quantidade de jogos gerados.
  * @param {number} totalJogosAlvo - Total de jogos a gerar.
  * @param {boolean} isAleatorio - Se está usando geração aleatória.
- * @param {number | null} [progressPercentCombinatoria] - Percentual de progresso para combinatória.
- * @param {string} [additionalInfo=""] - Informação adicional para exibir.
+ * @param {number | null} [progressPercent] - Percentual de progresso para combinatória.
+ * @param {string} [info] - Informação adicional (ex: combinações testadas).
+ * @param {number} [tempoDecorrido] - Tempo total decorrido em segundos.
+ * @param {number} [tempoRestante] - Tempo restante estimado/timeout em segundos.
  */
-async function updateProgress(jogosGerados, totalJogosAlvo, isAleatorio, progressPercentCombinatoria = null, additionalInfo = "") {
+async function updateProgress(jogosGerados, totalJogosAlvo, isAleatorio, progressPercent = null, info = "", tempoDecorrido = 0, tempoRestante = 0) {
     const progressElement = document.getElementById('progress-geracao');
     if (!progressElement) return;
 
+    const formatTime = (seconds) => {
+        if (seconds === Infinity) return '∞';
+        const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+        const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+        const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+        return `${h}:${m}:${s}`;
+    };
+
     return new Promise(resolve => {
-        // Usar requestAnimationFrame para atualizações mais suaves na UI
         requestAnimationFrame(() => {
-            let message;
+            let html;
             if (isAleatorio) {
-                message = `Gerados: ${jogosGerados} / ${totalJogosAlvo}`;
-                if (additionalInfo) message += ` (${additionalInfo})`;
+                const percentualGerados = totalJogosAlvo > 0 ? (jogosGerados / totalJogosAlvo) * 100 : 0;
+                html = `
+                    <div class="progress-bar-modern">
+                        <div class="progress-fill" style="width: ${percentualGerados.toFixed(2)}%;"></div>
+                        <span class="progress-label">Gerados: ${jogosGerados.toLocaleString('pt-BR')} / ${totalJogosAlvo.toLocaleString('pt-BR')}</span>
+                    </div>
+                    <div class="progress-details">
+                        <span>${info}</span>
+                        <span>Tempo: ${formatTime(tempoDecorrido)}</span>
+                        <span>Timeout: ${formatTime(tempoRestante)}</span>
+                    </div>
+                `;
             } else {
-                const percentText = progressPercentCombinatoria !== null ? `${progressPercentCombinatoria.toFixed(1)}%` : 'Calculando...';
-                message = `Gerados: ${jogosGerados} / ${totalJogosAlvo} | Combinações: ${percentText}`;
-                 if (additionalInfo) message += ` (${additionalInfo})`;
+                const percentText = progressPercent !== null ? `${progressPercent.toFixed(2)}%` : '0.00%';
+                html = `
+                    <div class="progress-bar-modern">
+                        <div class="progress-fill" style="width: ${percentText};"></div>
+                        <span class="progress-label">${percentText}</span>
+                    </div>
+                    <div class="progress-details">
+                        <span>${info}</span>
+                        <span>Gerados: ${jogosGerados.toLocaleString('pt-BR')}</span>
+                        <span>Tempo: ${formatTime(tempoDecorrido)} / ~${formatTime(tempoRestante)}</span>
+                    </div>
+                `;
             }
-            progressElement.textContent = message;
+            progressElement.innerHTML = html;
             resolve();
         });
     });
 }
 
-export { combinations, randomChoice, getSubconjuntos, jogosJaGerados, formatBrazilianCurrency, formatBrazilianPercentage, updateProgress };
+export { combinations, randomChoice, getSubconjuntos, jogosJaGerados, formatBrazilianCurrency, formatBrazilianPercentage, updateProgress, combinationsCount, combinationsGenerator };
