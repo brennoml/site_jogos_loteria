@@ -62,8 +62,8 @@ function validateGameConfig(config) {
     }
 
     // Validação para aproveitamento de jogos
-    if (config.aproveitaJogos && !document.getElementById('jogosExistentesFile').files[0] && config.jogosExistentes.length === 0) {
-        throw new Error('A opção "Aproveitar Jogos Existentes" está marcada, mas nenhum arquivo foi selecionado.');
+    if (config.aproveitaJogos && config.jogosExistentes.length === 0) {
+        throw new Error('A opção "Aproveitar Jogos da lista" está marcada, mas nenhum jogo foi marcado na lista para ser aproveitado.');
     }
 
     // Validações para a quantidade de jogos
@@ -105,18 +105,11 @@ function parseBrazilianNumber(value) {
 /**
  * Validates an analysis file, infers its game type, and extracts its data.
  * @param {File} file - The Excel file to validate.
- * @param {string} currentGameType - The game type currently selected in the UI.
- * @returns {Promise<{games: Array<Array<number>>, uniqueBalls: Array<number>}>}
- * @throws {Error} If the file is invalid or doesn't match the game type.
+ * @returns {Promise<{games: Array<Array<number>>, uniqueBalls: Array<number>, inferredTypes: Array<string>}>}
+ * @throws {Error} If the file is invalid.
  */
-async function validateAndGetFileInfo(file, currentGameType) {
+async function validateAndGetFileInfo(file) {
     if (!window.XLSX) throw new Error("Biblioteca XLSX não carregada.");
-
-    const gameRules = {
-        megasena: { min: 6, max: 20 },
-        quina: { min: 5, max: 15 },
-        lotofacil: { min: 15, max: 20 }
-    };
 
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data, { type: 'array' });
@@ -125,30 +118,49 @@ async function validateAndGetFileInfo(file, currentGameType) {
 
     const validGames = [];
     const uniqueBalls = new Set();
-    let inferredGameType = null;
+    let maxBall = 0;
+    let minGameLen = Infinity;
+    let maxGameLen = 0;
 
     for (const row of jsonData) {
         if (!row) continue;
         const gameNumbers = row.filter(num => num !== null && !isNaN(Number(num)) && Number.isInteger(Number(num)) && num >= 1).map(Number);
         
         if (gameNumbers.length > 0) {
-            if (!inferredGameType) {
-                for (const type in gameRules) {
-                    if (gameNumbers.length >= gameRules[type].min && gameNumbers.length <= gameRules[type].max) {
-                        inferredGameType = type;
-                        break;
-                    }
-                }
-            }
             validGames.push(gameNumbers);
-            gameNumbers.forEach(n => uniqueBalls.add(n));
+            minGameLen = Math.min(minGameLen, gameNumbers.length);
+            maxGameLen = Math.max(maxGameLen, gameNumbers.length);
+            gameNumbers.forEach(n => {
+                uniqueBalls.add(n);
+                if (n > maxBall) maxBall = n;
+            });
+        }
+    }
+    if (validGames.length === 0) {
+        throw new Error(`O arquivo "${file.name}" não contém jogos válidos.`);
+    }
+
+    // Infer game type based on all games in the file
+    const inferredTypes = [];
+    const gameTypeRules = {
+        megasena: { dezenas: { min: 6, max: 20 }, bolas: 60, label: 'MegaSena' },
+        quina: { dezenas: { min: 5, max: 15 }, bolas: 80, label: 'Quina' },
+        lotofacil: { dezenas: { min: 15, max: 20 }, bolas: 25, label: 'Lotofácil' }
+    };
+
+    for (const type in gameTypeRules) {
+        const rules = gameTypeRules[type];
+        // The file is a candidate for this type if all its games fit the rules
+        if (minGameLen >= rules.dezenas.min && maxGameLen <= rules.dezenas.max && maxBall <= rules.bolas) {
+            inferredTypes.push(rules.label);
         }
     }
 
-    if (validGames.length === 0) throw new Error(`O arquivo "${file.name}" não contém jogos válidos.`);
-    if (inferredGameType !== currentGameType) throw new Error(`O arquivo "${file.name}" parece ser do tipo "${inferredGameType}", mas o tipo de jogo selecionado é "${currentGameType}".`);
-
-    return { games: validGames, uniqueBalls: Array.from(uniqueBalls).sort((a, b) => a - b) };
+    return { 
+        games: validGames, 
+        uniqueBalls: Array.from(uniqueBalls).sort((a, b) => a - b), 
+        inferredTypes: inferredTypes 
+    };
 }
 
 export { validateGameConfig, parseBrazilianNumber, validateAndGetFileInfo };

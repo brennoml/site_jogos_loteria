@@ -1,6 +1,7 @@
 import { GAME_DEFAULTS } from './constants.js';
 import { generateReportPDF, generateReportWithGamesPDF } from './reportPdf.js';
-import { addFileToAnalysisList } from './main.js';
+import { combinationsCount, calculateInternalRepetitions } from './utils.js';
+import { validateAndGetFileInfo } from './validators.js';
 
 /**
  * Inicializa a interface do usuário do LotoPro.
@@ -93,6 +94,7 @@ function setupGenerationControls() {
     const selectAllBtn = document.getElementById('btn-select-all-balls');
     const deselectAllBtn = document.getElementById('btn-deselect-all-balls');
     const randomSelector = document.getElementById('random-ball-selector');
+    const convertToFavoriteBtn = document.getElementById('btn-convert-to-favorite');
 
     const generationCheckboxes = [combinatoriaAleatoriaCheckbox, combinatoriaSequencialCheckbox, aleatoriaCheckbox];
 
@@ -133,6 +135,15 @@ function setupGenerationControls() {
         });
     }
 
+    if (convertToFavoriteBtn) {
+        convertToFavoriteBtn.addEventListener('click', () => {
+            document.querySelectorAll('#ball-selection-panel .ball.active').forEach(ball => {
+                ball.classList.add('favorite');
+            });
+            updateBallStats();
+        });
+    }
+
     if (deselectAllBtn) {
         deselectAllBtn.addEventListener('click', () => {
             document.querySelectorAll('#ball-selection-panel .ball').forEach(ball => {
@@ -164,17 +175,33 @@ function setupGenerationControls() {
 
     // Listener para o modal de relatório
     const modal = document.getElementById('generation-report-modal');
-    const closeButton = modal.querySelector('.close-button');
-    if (closeButton) {
-        closeButton.onclick = () => {
-            modal.style.display = 'none';
-        };
+    if (modal) {
+        const closeButton = modal.querySelector('.close-button');
+        if (closeButton) {
+            closeButton.onclick = () => modal.style.display = 'none';
+        }
     }
-    window.onclick = (event) => {
-        if (event.target == modal) {
+
+    // Listener para o novo modal de frequência de prêmios
+    const prizeFreqModal = document.getElementById('prize-frequency-modal');
+    if (prizeFreqModal) {
+        const closeButton = prizeFreqModal.querySelector('.close-button');
+        const closeFooterButton = document.getElementById('close-prize-frequency-modal');
+        const closeModal = () => prizeFreqModal.style.display = 'none';
+ 
+        if (closeButton) closeButton.onclick = closeModal;
+        if (closeFooterButton) closeFooterButton.onclick = closeModal;
+    }
+ 
+    // Listener global para fechar modais ao clicar fora (substitui o antigo window.onclick)
+    window.addEventListener('click', (event) => {
+        if (modal && event.target == modal) {
             modal.style.display = 'none';
         }
-    };
+        if (prizeFreqModal && event.target == prizeFreqModal) {
+            prizeFreqModal.style.display = 'none';
+        }
+    });
 }
 
 /**
@@ -197,6 +224,11 @@ function createSimulationBallPanel(gameType) {
         ball.addEventListener('click', () => {
             ball.classList.toggle('active');
             updateSimulationBallPanelStats();
+            // Desmarca a caixa "Usar apenas bolas contidas nos jogos testados"
+            const useOnlyTestGamesCheckbox = document.getElementById('useOnlyBallsFromTestGames');
+            if (useOnlyTestGamesCheckbox) {
+                useOnlyTestGamesCheckbox.checked = false;
+            }
         });
 
         panel.appendChild(ball);
@@ -282,6 +314,7 @@ function updateBallStats() {
 
     // Atualiza o estado dos controles dependentes, como a visibilidade do seletor de peso
     updateGenerationInputsState();
+    updateCombinatorialGenerationState();
 }
 
 /**
@@ -329,8 +362,12 @@ function populateGameParameterDropdowns(gameType) {
         }
     };
 
-    dezenasSelect.addEventListener('change', updateAcertos);
+    dezenasSelect.addEventListener('change', () => {
+        updateAcertos();
+        updateCombinatorialGenerationState();
+    });
     updateAcertos(); // Chamada inicial
+    updateCombinatorialGenerationState(); // Chamada inicial
 }
 
 /**
@@ -361,6 +398,57 @@ const rules = {
     quina: { dezenas: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], acertos: [2, 3, 4, 5] },
     lotofacil: { dezenas: [15, 16, 17, 18, 19, 20], acertos: [11, 12, 13, 14, 15] }
 };
+
+/**
+ * Atualiza o estado (habilitado/desabilitado) dos checkboxes de geração combinatória.
+ * Desabilita as opções se o número de combinações for muito alto, para evitar travamentos.
+ * @function updateCombinatorialGenerationState
+ * @returns {void}
+ */
+function updateCombinatorialGenerationState() {
+    const selectedBallsCount = document.querySelectorAll('#ball-selection-panel .ball.active').length;
+    const dezenasJogadas = parseInt(document.getElementById('dezenasJogadas').value, 10);
+    const combinatoriaAleatoriaCheckbox = document.getElementById('geracaoCombinatoriaAleatoria');
+    const combinatoriaSequencialCheckbox = document.getElementById('geracaoCombinatoriaSequencial');
+
+    if (!combinatoriaAleatoriaCheckbox || !combinatoriaSequencialCheckbox || isNaN(dezenasJogadas) || selectedBallsCount < dezenasJogadas) {
+        if (combinatoriaAleatoriaCheckbox) combinatoriaAleatoriaCheckbox.disabled = true;
+        if (combinatoriaSequencialCheckbox) combinatoriaSequencialCheckbox.disabled = true;
+        return;
+    }
+
+    const totalCombinations = combinationsCount(selectedBallsCount, dezenasJogadas);
+    
+    const COMBINATION_MEMORY_LIMIT = 400000000; // Limite para "Aleatória"
+    const COMBINATION_LIMIT = 1000000000;      // Limite para "Sequencial"
+
+    // Lógica para Combinatória Aleatória
+    if (totalCombinations > COMBINATION_MEMORY_LIMIT) {
+        combinatoriaAleatoriaCheckbox.disabled = true;
+        combinatoriaAleatoriaCheckbox.checked = false;
+        combinatoriaAleatoriaCheckbox.parentElement.title = `Muitas combinações (${totalCombinations.toLocaleString('pt-BR')}) para este método. Use "Combinatória em Sequência" ou "Geração Aleatória".`;
+    } else {
+        combinatoriaAleatoriaCheckbox.disabled = false;
+        combinatoriaAleatoriaCheckbox.parentElement.title = '';
+    }
+
+    // Lógica para Combinatória Sequencial
+    if (totalCombinations > COMBINATION_LIMIT) {
+        combinatoriaSequencialCheckbox.disabled = true;
+        combinatoriaSequencialCheckbox.checked = false;
+        combinatoriaSequencialCheckbox.parentElement.title = `Muitas combinações (${totalCombinations.toLocaleString('pt-BR')}). Use "Geração Aleatória".`;
+    } else {
+        combinatoriaSequencialCheckbox.disabled = false;
+        combinatoriaSequencialCheckbox.parentElement.title = '';
+    }
+
+    // Garante que pelo menos uma opção de geração esteja marcada se as outras forem desabilitadas
+    const generationCheckboxes = [combinatoriaAleatoriaCheckbox, combinatoriaSequencialCheckbox, document.getElementById('geracaoAleatoria')];
+    if (!generationCheckboxes.some(cb => cb.checked)) {
+        const firstEnabled = generationCheckboxes.find(cb => !cb.disabled);
+        if (firstEnabled) firstEnabled.checked = true;
+    }
+}
 
 /**
  * Define valores padrão otimizados para cada tipo de jogo na aba de geração.
@@ -517,6 +605,7 @@ function handleGlobalGameTypeChange() {
     try {
         updateAnalysisPrizeInputs(selectedGame);
         setGenerationDefaults(selectedGame);
+        filterAndRefreshManagedGamesList(selectedGame);
         createSimulationBallPanel(selectedGame);
     } catch (error) {
         console.error('Erro ao atualizar configurações:', error);
@@ -569,6 +658,255 @@ function updateGenerationInputsState() {
 }
 
 /**
+ * Atualiza o conteúdo de um item de jogo na lista (tipo, repetições) com base no tipo de jogo selecionado.
+ * @param {HTMLElement} wrapper - O elemento wrapper do item do jogo.
+ * @param {string} gameType - O tipo de jogo atual ('megasena', 'quina', 'lotofacil').
+ */
+function updateManagedGameItemContent(wrapper, gameType) {
+    const itemId = wrapper.dataset.itemId;
+    const itemData = window.managedGames[itemId];
+    if (!itemData) return;
+
+    const gameTypeLabels = { megasena: 'MegaSena', quina: 'Quina', lotofacil: 'Lotofácil' };
+    const currentLabel = gameTypeLabels[gameType];
+
+    // Atualiza a string do tipo de jogo, destacando o tipo atual
+    const typeLine = wrapper.querySelector('.detail-line.game-types');
+    if (typeLine && itemData.inferredTypes && itemData.inferredTypes.length > 0) {
+        const typesHTML = itemData.inferredTypes.map(t => {
+            return t === currentLabel ? `<b>${t}</b>` : t;
+        }).join(' / ');
+        typeLine.innerHTML = `<i class="fas fa-dice detail-icon"></i> <b>Tipo:</b> ${typesHTML}`;
+    }
+
+    // Atualiza a string de repetições para mostrar apenas as relevantes
+    const repetitionLine = wrapper.querySelector('.detail-line.repetitions');
+    if (repetitionLine) {
+        const prizeTiersForType = {
+            megasena: [4, 5, 6],
+            quina: [2, 3, 4, 5],
+            lotofacil: [11, 12, 13, 14, 15]
+        };
+        const relevantTiers = prizeTiersForType[gameType] || [];
+        const groupSizeToName = {
+            2: 'duques', 3: 'ternos', 4: 'quadras', 5: 'quinas', 6: 'senas',
+            11: 'onzes', 12: 'dozes', 13: 'trezes', 14: 'quatorzes', 15: 'quinzes'
+        };
+
+        let newRepetitionHTML = '';
+        if (itemData.repetitionCounts && Object.keys(itemData.repetitionCounts).length > 0) {
+            const parts = Object.entries(itemData.repetitionCounts)
+                .filter(([size]) => relevantTiers.includes(parseInt(size)))
+                .map(([size, count]) => `${count.toLocaleString('pt-BR')} ${groupSizeToName[size] || `grupos de ${size}`}`)
+                .join(', ');
+            if (parts) {
+                newRepetitionHTML = `<i class="fas fa-clone detail-icon"></i> <b>Repetidos:</b> ${parts}`;
+            }
+        }
+        repetitionLine.innerHTML = newRepetitionHTML;
+        repetitionLine.style.display = newRepetitionHTML ? 'block' : 'none';
+    }
+}
+
+/**
+ * Filtra a lista de jogos gerenciados para mostrar apenas aqueles compatíveis com o tipo de jogo selecionado.
+ * Também atualiza o conteúdo dos itens visíveis.
+ * @param {string} gameType - O tipo de jogo selecionado.
+ */
+function filterAndRefreshManagedGamesList(gameType) {
+    const gameTypeLabels = {
+        megasena: 'MegaSena',
+        quina: 'Quina',
+        lotofacil: 'Lotofácil'
+    };
+    const requiredLabel = gameTypeLabels[gameType];
+
+    document.querySelectorAll('.file-item-analise-wrapper').forEach(wrapper => {
+        const gameTypes = wrapper.dataset.gameTypes || '';
+        if (gameTypes.includes(requiredLabel)) {
+            wrapper.style.display = 'block';
+            updateManagedGameItemContent(wrapper, gameType); // Atualiza o conteúdo dos itens visíveis
+        } else {
+            wrapper.style.display = 'none';
+        }
+    });
+}
+
+/**
+ * Adiciona um novo jogo (de arquivo ou gerado) à lista unificada de jogos.
+ * A função valida o jogo, adiciona-o ao estado global e renderiza-o nas UIs das abas 'Geração' e 'Análise'.
+ * @param {File|object} source - O objeto File do Excel ou um objeto com dados de um jogo gerado.
+ */
+export async function addManagedGame(source) {
+    const genListContainer = document.getElementById('generation-file-list');
+    const fileListContainer = document.getElementById('analise-file-list');
+    if (!genListContainer || !fileListContainer) return;
+
+    if (Object.keys(window.managedGames).length >= 20) {
+        alert('Você pode adicionar no máximo 20 arquivos.');
+        return;
+    }
+
+    try {
+        const currentGameType = document.getElementById('gameTypeGlobal').value;
+        const gameId = `game_${window.managedGameCounter++}`;
+        let itemData;
+
+        if (source instanceof File) {
+            const fileInfo = await validateAndGetFileInfo(source);
+            
+            const gameTypeRules = { megasena: { label: 'MegaSena' }, quina: { label: 'Quina' }, lotofacil: { label: 'Lotofácil' } };
+            const currentGameLabel = gameTypeRules[currentGameType]?.label;
+
+            if (fileInfo.inferredTypes.length > 0 && !fileInfo.inferredTypes.includes(currentGameLabel)) {
+                const confirmation = confirm(`Este jogo parece ser do tipo "${fileInfo.inferredTypes.join(' / ')}", que é diferente do tipo selecionado ("${currentGameLabel}"). Deseja adicioná-lo mesmo assim?`);
+                if (!confirmation) {
+                    return; // Para de adicionar o jogo
+                }
+            }
+
+            const repetitionGroupSizes = [2, 3, 4, 5, 6, 11, 12, 13, 14, 15];
+            const repetitionCounts = calculateInternalRepetitions(fileInfo.games, repetitionGroupSizes);
+
+            itemData = { id: gameId, type: 'external', name: source.name, file: source, games: fileInfo.games, uniqueBalls: fileInfo.uniqueBalls, inferredTypes: fileInfo.inferredTypes, repetitionCounts: repetitionCounts };
+        } else { // É um jogo gerado
+            const uniqueBalls = Array.from(source.allGames.reduce((acc, game) => { game.forEach(ball => acc.add(ball)); return acc; }, new Set())).sort((a, b) => a - b);
+            const repetitionGroupSizes = [2, 3, 4, 5, 6, 11, 12, 13, 14, 15];
+            const repetitionCounts = calculateInternalRepetitions(source.allGames, repetitionGroupSizes);
+            const gameTypeRules = { megasena: { label: 'MegaSena' }, quina: { label: 'Quina' }, lotofacil: { label: 'Lotofácil' } };
+            const inferredTypes = [gameTypeRules[currentGameType]?.label || 'Desconhecido'];
+
+            itemData = { ...source, id: gameId, type: 'generated', games: source.allGames, uniqueBalls: uniqueBalls, inferredTypes: inferredTypes, repetitionCounts: repetitionCounts };
+        }
+
+        window.managedGames[gameId] = itemData;
+
+        // Renderiza o item em ambas as listas
+        const genItem = createManagedGameItem(itemData, 'generation');
+        const analysisItem = createManagedGameItem(itemData, 'analysis');
+
+        genListContainer.appendChild(genItem);
+        fileListContainer.appendChild(analysisItem);
+
+        // Aplica o filtro e atualiza o conteúdo dos itens recém-criados
+        filterAndRefreshManagedGamesList(currentGameType);
+
+    } catch (error) {
+        alert(`Erro ao adicionar jogo: ${error.message}`);
+    }
+}
+
+/**
+ * Cria o conteúdo HTML para um item de jogo gerenciado.
+ * @param {object} itemData - Os dados do jogo.
+ * @param {string} context - O contexto de renderização ('generation' ou 'analysis').
+ * @returns {string} A string HTML para o item.
+ * @private
+ */
+function _createManagedGameItemHTML(itemData, context) {
+    const isExternal = itemData.type === 'external';
+    const isGenerated = itemData.type === 'generated';
+    const iconClass = isExternal ? 'fa-file-excel' : 'fa-magic';
+
+    const ballInfoString = `<div class="detail-line"><i class="fas fa-globe detail-icon"></i> <b>Bolas (${itemData.uniqueBalls.length}):</b> ${itemData.uniqueBalls.join(', ')}</div>`;
+
+    const reportButtonHTML = (context === 'generation' && isGenerated)
+        ? `<button class="btn-show-report" title="Exibir Relatório"><i class="fas fa-eye"></i></button>`
+        : '';
+
+    const addBallsButtonHTML = (context === 'analysis')
+        ? `<button class="btn btn-ghost btn-add-balls" data-file-id="${itemData.id}" style="margin-top: 0.5rem; width: 100%; font-size: 0.75rem; padding: 0.5rem;">
+               <i class="fas fa-plus-circle"></i> Adicionar bolas deste jogo à seleção
+           </button>`
+        : '';
+
+    return `
+        <div class="file-item-analise">
+            <input type="checkbox" checked title="Incluir este jogo na análise/aproveitamento">
+            <i class="fas ${iconClass}" style="margin-right: 8px; color: var(--primary-color);"></i>
+            <span class="file-name">${itemData.name}</span>
+            ${reportButtonHTML}
+            <button class="delete-btn" title="Remover item"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="file-item-details-frame">
+            <div class="detail-line game-types"></div>
+            <div class="detail-line repetitions" style="display: none;"></div>
+            ${ballInfoString}
+        </div>
+        ${addBallsButtonHTML}
+    `;
+}
+
+/**
+ * Anexa os event listeners a um elemento de item de jogo gerenciado.
+ * @param {HTMLElement} itemWrapper - O elemento wrapper do item.
+ * @param {object} itemData - Os dados do jogo.
+ * @param {string} context - O contexto de renderização.
+ * @private
+ */
+function _attachManagedGameItemListeners(itemWrapper, itemData, context) {
+    itemWrapper.querySelector('.delete-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const event = new CustomEvent('deleteManagedGame', { detail: { id: itemData.id } });
+        document.dispatchEvent(event);
+    });
+
+    if (context === 'generation' && itemData.type === 'generated') {
+        const reportButton = itemWrapper.querySelector('.btn-show-report');
+        if (reportButton) {
+            reportButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const storedData = window.managedGames[itemData.id];
+                if (storedData && storedData.reportData) {
+                    window.currentGeneratedGames = storedData.allGames;
+                    showGenerationReport(storedData.reportData, storedData.workbook, storedData.filename);
+                }
+            });
+        }
+    }
+
+    if (context === 'analysis') {
+        const addBallsButton = itemWrapper.querySelector('.btn-add-balls');
+        if (addBallsButton) {
+            addBallsButton.addEventListener('click', () => {
+                const ballsToAdd = window.managedGames[itemData.id]?.uniqueBalls;
+                if (ballsToAdd) {
+                    document.querySelectorAll('#simulation-ball-panel .ball').forEach(ballEl => {
+                        const ballNum = parseInt(ballEl.dataset.number, 10);
+                        if (ballsToAdd.includes(ballNum)) {
+                            ballEl.classList.add('active');
+                        }
+                    });
+                    updateSimulationBallPanelStats();
+                    const useOnlyTestGamesCheckbox = document.getElementById('useOnlyBallsFromTestGames');
+                    if (useOnlyTestGamesCheckbox) useOnlyTestGamesCheckbox.checked = false;
+                }
+            });
+        }
+    }
+}
+
+/**
+ * Cria o elemento HTML para um item da lista de jogos gerenciados.
+ * A aparência do item pode variar dependendo do contexto (aba 'Geração' ou 'Análise').
+ * @param {object} itemData - Os dados do jogo (arquivo ou gerado).
+ * @param {string} context - O contexto de renderização ('generation' ou 'analysis').
+ * @returns {HTMLElement} O elemento wrapper do item da lista.
+ */
+
+function createManagedGameItem(itemData, context) {
+    const itemWrapper = document.createElement('div');
+    itemWrapper.className = 'file-item-analise-wrapper';
+    itemWrapper.dataset.itemId = itemData.id;
+    itemWrapper.dataset.gameTypes = itemData.inferredTypes.join(',');
+    
+    itemWrapper.innerHTML = _createManagedGameItemHTML(itemData, context);
+    _attachManagedGameItemListeners(itemWrapper, itemData, context);
+
+    return itemWrapper;
+}
+
+/**
  * Exibe o relatório de geração em um modal.
  * @param {object} reportData - Os dados para popular o relatório.
  * @param {object} workbook - O workbook do Excel gerado.
@@ -577,7 +915,6 @@ function updateGenerationInputsState() {
 function showGenerationReport(reportData, workbook, filename) {
     // Armazena os dados para re-ordenar
     window.currentReportData = reportData;
-
     const modal = document.getElementById('generation-report-modal');
     const statsContainer = document.getElementById('report-stats');
     const frequencyContainer = document.getElementById('report-frequency');
@@ -700,10 +1037,11 @@ function showGenerationReport(reportData, workbook, filename) {
 
         frequencyContainer.innerHTML = '';
         sortedData.forEach(item => {
+            const ballClass = item.abs > 0 ? 'ball active' : 'ball inactive';
             const ballContainer = document.createElement('div');
             ballContainer.className = 'freq-ball';
             ballContainer.innerHTML = `
-                <div class="ball active">${String(item.bola).padStart(2, '0')}</div>
+                <div class="${ballClass}">${String(item.bola).padStart(2, '0')}</div>
                 <div class="freq-abs"><b>${item.abs.toLocaleString('pt-BR')}</b></div>
                 <div class="freq-rel">${item.rel.toFixed(2).replace('.', ',')}%</div>
             `;
@@ -722,24 +1060,6 @@ function showGenerationReport(reportData, workbook, filename) {
     if (saveExcelButton && workbook && filename) {
         saveExcelButton.onclick = () => {
             XLSX.writeFile(workbook, filename);
-        };
-    }
-
-    // Botão para adicionar os jogos gerados para a aba de análise
-    const addForAnalysisButton = document.getElementById('add-generated-to-analysis');
-    if (addForAnalysisButton && workbook && filename) {
-        addForAnalysisButton.onclick = () => {
-            // Converte o workbook em memória para um objeto File que pode ser processado
-            const wb_out = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-            const blob = new Blob([wb_out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-            const generatedFile = new File([blob], filename, { type: blob.type });
-
-            // Chama a função exportada de main.js para adicionar o arquivo à lista
-            addFileToAnalysisList(generatedFile);
-
-            // Fornece feedback e fecha o modal
-            alert(`"${filename}" foi adicionado à aba de Análise.`);
-            modal.style.display = 'none';
         };
     }
 

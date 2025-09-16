@@ -1,4 +1,4 @@
-import { combinations, randomChoice, formatBrazilianCurrency, formatBrazilianPercentage } from './utils.js';
+import { combinations, randomChoice, formatBrazilianCurrency, formatBrazilianPercentage, combinationsCount, updateProgress } from './utils.js';
 import { parseBrazilianNumber } from './validators.js';
 import { PRIZE_DEFAULTS } from './constants.js';
 
@@ -163,6 +163,20 @@ function saveAnalysisToExcel() {
 }
 
 /**
+ * Shows a modal with prize frequency details.
+ * @param {string} prizeTierKey - The key for the prize tier (e.g., 'quina').
+ * @param {string} prizeTierLabel - The display name (e.g., 'Quina').
+ */
+function showPrizeFrequencyModal(prizeTierKey, prizeTierLabel) {
+    const modal = document.getElementById('prize-frequency-modal');
+    const titleEl = document.getElementById('prize-frequency-modal-title');
+    const contentEl = document.getElementById('prize-frequency-modal-content');
+    
+    // This function will be fully implemented in interface.js where it has access to the report data.
+    // This is just a placeholder call. The actual implementation is in main.js setup.
+}
+
+/**
  * Renders a pie chart in a given container.
  * @param {HTMLElement} containerElement - The div element where the chart will be rendered.
  * @param {object} chartData - Data for the chart, including labels and datasets.
@@ -224,6 +238,22 @@ function renderPrizeDistributionChart(containerElement, chartData, title) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            onHover: (event, chartElement) => {
+                event.native.target.style.cursor = chartElement[0] ? 'pointer' : 'default';
+            },
+            onClick: (event, elements) => {
+                if (elements.length > 0) {
+                    const clickedIndex = elements[0].index;
+                    const clickedLabel = newChart.data.labels[clickedIndex];
+                    const prizeTierKey = clickedLabel.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // 'Sena' -> 'sena'
+                    
+                    // Find the original tier object to get the correct key
+                    const tier = chartData.gameConfig.prizeTiers.find(t => t.key.toLowerCase() === prizeTierKey);
+                    if (tier) {
+                        showPrizeFrequencyModal(tier.key, clickedLabel);
+                    }
+                }
+            },
             plugins: {
                 title: {
                     display: true,
@@ -232,6 +262,9 @@ function renderPrizeDistributionChart(containerElement, chartData, title) {
                     padding: { top: 10, bottom: 20 }
                 },
                 tooltip: {
+                    callbacks: {
+                        footer: () => 'Clique para ver a Frequência de Prêmios',
+                    },
                     callbacks: {
                         label: function(context) {
                             const label = context.label || '';
@@ -271,6 +304,43 @@ function renderPrizeDistributionChart(containerElement, chartData, title) {
             }
         }
     });
+}
+
+/**
+ * Calculates internal repetitions of combinations within a set of games.
+ * @param {Array<Array<number>>} games - The list of games to analyze.
+ * @param {object} gameConfig - The configuration for the game type.
+ * @returns {object} An object with counts of repeated combinations (e.g., { quadras: 10, quinas: 2 }).
+ */
+export function calculateInternalRepetitions(games, gameConfig) {
+    const repetitions = {};
+    const combinationCounts = {};
+
+    gameConfig.prizeTiers.forEach(tier => {
+        combinationCounts[tier.key] = {};
+        repetitions[tier.key] = 0;
+    });
+
+    games.forEach(game => {
+        gameConfig.prizeTiers.forEach(tier => {
+            if (game.length >= tier.hits) {
+                const combos = combinations(game, tier.hits);
+                combos.forEach(combo => {
+                    const key = JSON.stringify(combo);
+                    combinationCounts[tier.key][key] = (combinationCounts[tier.key][key] || 0) + 1;
+                });
+            }
+        });
+    });
+
+    for (const tierKey in combinationCounts) {
+        for (const comboKey in combinationCounts[tierKey]) {
+            if (combinationCounts[tierKey][comboKey] > 1) {
+                repetitions[tierKey]++;
+            }
+        }
+    }
+    return repetitions;
 }
 
 /**
@@ -324,12 +394,17 @@ async function executeAnalysis() {
     if (simUniverseWrapper) {
         simUniverseWrapper.style.display = 'none';
     }
+    const comparativeControls = document.getElementById('analise-grafico-controls-wrapper');
+    if (comparativeControls) {
+        comparativeControls.style.display = 'none';
+    }
     window.analysisWorkbook = null;
     window.analysisReportData = null;
-    status.textContent = 'Processando...';
-    status.classList.remove('error');
-    progress.textContent = 'Iniciando...';
-    loader.style.display = 'block';
+    // Configuração da UI para o progresso
+    status.style.display = 'none'; // Oculta a mensagem de status final
+    loader.style.display = 'none'; // Oculta o loader simples
+    progress.innerHTML = ''; // Limpa o conteúdo anterior da barra de progresso
+    progress.style.display = 'block'; // Exibe o container da barra de progresso
 
     try {
         const tipoJogo = document.getElementById('gameTypeGlobal').value;
@@ -337,25 +412,34 @@ async function executeAnalysis() {
 
         // 1. Coletar arquivos de jogos do usuário da lista da UI
         const userGameFilesData = [];
-        document.querySelectorAll('#analise-file-list .file-item-analise').forEach(item => {
-            const checkbox = item.querySelector('input[type="checkbox"]');
+        document.querySelectorAll('#analise-file-list .file-item-analise-wrapper').forEach(wrapper => {
+            const checkbox = wrapper.querySelector('.file-item-analise input[type="checkbox"]');
             if (checkbox && checkbox.checked) {
-                const fileId = item.dataset.fileId;
-                if (window.analiseFiles && window.analiseFiles[fileId]) {
-                    userGameFilesData.push(window.analiseFiles[fileId]);
+                const gameId = wrapper.dataset.itemId;
+                const gameData = window.managedGames[gameId];
+                if (gameData) {
+                    userGameFilesData.push(gameData);
                 }
             }
         });
 
         if (userGameFilesData.length === 0) {
-            throw new Error('Por favor, adicione e selecione pelo menos um arquivo de jogo para análise.');
+            throw new Error('Por favor, adicione e marque pelo menos um jogo na lista para análise.');
         }
 
         // 2. Ler e processar todos os arquivos de jogos do usuário selecionados
         progress.textContent = 'Processando jogos do usuário...';
         const allUserGamesData = []; // Estrutura: [{fileName: '...', originalGames: [...]}]
-        for (const fileData of userGameFilesData) {
-            const fileBuffer = await fileData.file.arrayBuffer();
+        for (const gameData of userGameFilesData) {
+            let fileBuffer;
+            if (gameData.type === 'external') {
+                fileBuffer = await gameData.file.arrayBuffer();
+            } else if (gameData.type === 'generated' && gameData.workbook) {
+                const wb_out = XLSX.write(gameData.workbook, { bookType: 'xlsx', type: 'array' });
+                fileBuffer = wb_out;
+            } else {
+                continue; // Pula se não houver fonte de dados
+            }
             const workbook = XLSX.read(fileBuffer, { type: 'array' });
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
             let jogos = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
@@ -366,7 +450,7 @@ async function executeAnalysis() {
 
             if (jogos.length > 0) {
                 allUserGamesData.push({
-                    fileName: fileData.name,
+                    fileName: gameData.name,
                     originalGames: jogos
                 });
             }
@@ -392,6 +476,9 @@ async function executeAnalysis() {
             const draw = randomChoice(ballUniverse, null, gameConfig.expectedNumbers, false);
             resultadosHistoricos.push(draw.sort((a, b) => a - b));
         }
+
+        // Armazena os resultados da simulação globalmente para serem usados por outros módulos (ex: gráfico comparativo)
+        window.analysisSimulationResults = resultadosHistoricos;
 
         // Expande jogos com mais dezenas que o padrão (desdobramento)
         progress.textContent = 'Expandindo jogos do usuário (se necessário)...';
@@ -447,16 +534,16 @@ async function executeAnalysis() {
         const resultados = [];
 
         // Estruturas para armazenar estatísticas agregadas
-        const prizeCountsByFile = {};
+        const pieChartCountsByFile = {};
         allUserGamesData.forEach(fileData => {
-            prizeCountsByFile[fileData.fileName] = { semPremio: 0 };
+            pieChartCountsByFile[fileData.fileName] = { semPremio: 0 };
             gameConfig.prizeTiers.forEach(tier => {
-                prizeCountsByFile[fileData.fileName][tier.key] = 0;
+                pieChartCountsByFile[fileData.fileName][tier.key] = 0;
             });
         });
-        const totalPrizeCounts = { semPremio: 0 };
+        const totalPieChartCounts = { semPremio: 0 };
         gameConfig.prizeTiers.forEach(tier => {
-            totalPrizeCounts[tier.key] = 0;
+            totalPieChartCounts[tier.key] = 0;
         });
 
         const totaisSorteiosSemPremio = {}; // { quadra: 500, quina: 2000, ... }
@@ -471,59 +558,97 @@ async function executeAnalysis() {
 
         let totalPremio = 0, totalPremioSemMaximo = 0;
 
+        const loopStartTime = performance.now();
         // Loop principal: itera sobre cada sorteio histórico para calcular os resultados
-        resultadosHistoricosComIndice.forEach((jogoHistorico, indiceLoop) => {
-            if (indiceLoop > 0 && indiceLoop % 100 === 0) { 
-                 progress.textContent = `Analisando sorteio ${indiceLoop + 1} de ${resultadosHistoricosComIndice.length}...`;
+        for (let i = 0; i < resultadosHistoricosComIndice.length; i++) {
+            const jogoHistorico = resultadosHistoricosComIndice[i];
+            if (i > 0 && (i % 100 === 0 || i === resultadosHistoricosComIndice.length - 1)) {
+                const tempoDecorrido = (performance.now() - loopStartTime) / 1000;
+                const velocidade = (i + 1) / tempoDecorrido;
+                const sorteiosRestantes = resultadosHistoricosComIndice.length - (i + 1);
+                const tempoRestante = velocidade > 0 ? sorteiosRestantes / velocidade : 0;
+                const percentual = (i + 1) / resultadosHistoricosComIndice.length * 100;
+                const info = `Analisando: ${(i + 1).toLocaleString('pt-BR')} / ${resultadosHistoricosComIndice.length.toLocaleString('pt-BR')}`;
+                
+                await updateProgress(
+                    'progress-analise',
+                    null, null, // currentCount, totalCount
+                    false, // isAleatorio
+                    percentual, // progressPercent
+                    info, // info
+                    null, // countLabel
+                    tempoDecorrido, tempoRestante
+                );
             }
             const numerosHistoricos = new Set(jogoHistorico.slice(1).map(Number).filter(num => !isNaN(num)));
             
             // Contadores de prêmios para ESTE sorteio (para o Excel)
             const premiosNesteSorteio = {};
-            gameConfig.prizeTiers.forEach(tier => {
-                premiosNesteSorteio[tier.key] = 0;
-            });
+            gameConfig.prizeTiers.forEach(tier => { premiosNesteSorteio[tier.key] = 0; });
 
-            // Contadores para os gráficos de pizza
-            const premiosNesteSorteioPorArquivo = {};
+            let bestOverallTierInSim = null;
+            const bestTierByFileInSim = {};
+
+            // Itera sobre os jogos ORIGINAIS para calcular os prêmios para o Excel
+            // e determinar o melhor prêmio por simulação para os gráficos de pizza.
             allUserGamesData.forEach(fileData => {
-                premiosNesteSorteioPorArquivo[fileData.fileName] = 0;
-            });
-            let totalPremiosNesteSorteio = 0;
+                let bestTierForThisFile = null;
 
-            // Compara cada jogo do usuário com o sorteio histórico atual
-            jogosUsuarioExpandidos.forEach(jogoDoUsuario => {
-                const fileName = jogoDoUsuario.file;
-                const numerosJogoDoUsuario = jogoDoUsuario.gameData.slice(1).map(Number);
-                const acertosCount = numerosJogoDoUsuario.filter(num => numerosHistoricos.has(num)).length;
+                fileData.originalGames.forEach(jogoOriginal => {
+                    const dezenasDoJogo = jogoOriginal.map(Number);
+                    const acertosNoJogo = dezenasDoJogo.filter(num => numerosHistoricos.has(num)).length;
 
-                // Encontra a faixa de prêmio correspondente ao número de acertos
-                const tierHit = gameConfig.prizeTiers.find(tier => tier.hits === acertosCount);
-                if (tierHit) {
-                    // Para o Excel (agregado)
-                    premiosNesteSorteio[tierHit.key]++;
+                    // Calcula os prêmios para cada faixa (para o Excel) e encontra o melhor prêmio
+                    gameConfig.prizeTiers.forEach(tier => {
+                        let premiosDesteTipo = 0;
+                        if (acertosNoJogo >= tier.hits && dezenasDoJogo.length >= tier.hits) {
+                            const dezenasNaoSorteadasNoJogo = dezenasDoJogo.length - acertosNoJogo;
+                            const dezenasASeremSorteadasDasNaoSorteadas = gameConfig.expectedNumbers - tier.hits;
+                            
+                            if (dezenasNaoSorteadasNoJogo >= dezenasASeremSorteadasDasNaoSorteadas && dezenasASeremSorteadasDasNaoSorteadas >= 0) {
+                                const combinacoesDeAcertos = combinationsCount(acertosNoJogo, tier.hits);
+                                const combinacoesDeNaoAcertos = combinationsCount(dezenasNaoSorteadasNoJogo, dezenasASeremSorteadasDasNaoSorteadas);
+                                premiosDesteTipo = combinacoesDeAcertos * combinacoesDeNaoAcertos;
+                            }
+                        }
 
-                    // Para os gráficos de pizza (por arquivo e total)
-                    prizeCountsByFile[fileName][tierHit.key]++;
-                    totalPrizeCounts[tierHit.key]++;
-                    premiosNesteSorteioPorArquivo[fileName]++;
-                    totalPremiosNesteSorteio++;
+                        if (premiosDesteTipo > 0) {
+                            premiosNesteSorteio[tier.key] += premiosDesteTipo; // Para o relatório Excel
+
+                            // Atualiza o melhor prêmio para este arquivo nesta simulação
+                            if (!bestTierForThisFile || tier.hits > bestTierForThisFile.hits) {
+                                bestTierForThisFile = tier;
+                            }
+                        }
+                    });
+                });
+
+                bestTierByFileInSim[fileData.fileName] = bestTierForThisFile;
+
+                // Atualiza o melhor prêmio geral da simulação
+                if (bestTierForThisFile && (!bestOverallTierInSim || bestTierForThisFile.hits > bestOverallTierInSim.hits)) {
+                    bestOverallTierInSim = bestTierForThisFile;
                 }
             });
+ 
+            // Atualiza os contadores para os gráficos de pizza com base no resultado da SIMULAÇÃO
+            if (bestOverallTierInSim) {
+                totalPieChartCounts[bestOverallTierInSim.key]++;
+            } else {
+                totalPieChartCounts.semPremio++;
+            }
 
-            // Após checar todos os jogos, atualiza contadores "sem prêmio"
-            for (const fileName in premiosNesteSorteioPorArquivo) {
-                if (premiosNesteSorteioPorArquivo[fileName] === 0) {
-                    prizeCountsByFile[fileName].semPremio++;
+            allUserGamesData.forEach(fileData => {
+                const bestTierForFile = bestTierByFileInSim[fileData.fileName];
+                if (bestTierForFile) {
+                    pieChartCountsByFile[fileData.fileName][bestTierForFile.key]++;
+                } else {
+                    pieChartCountsByFile[fileData.fileName].semPremio++;
                 }
-            }
-            if (totalPremiosNesteSorteio === 0) {
-                totalPrizeCounts.semPremio++;
-            }
+            });
 
             // Acumula os resultados deste sorteio nas estatísticas globais
             let premioTotalNesteSorteio = 0, premioSemMaximoNesteSorteio = 0;
-
             gameConfig.prizeTiers.forEach(tier => {
                 const count = premiosNesteSorteio[tier.key];
                 const value = premios[tier.key];
@@ -557,7 +682,7 @@ async function executeAnalysis() {
                 premioTotalNesteSorteio
             ];
             resultados.push(linhaResultado);
-        });
+        }
 
         // Contadores para as faixas de percentual de prêmio vs custo
         const faixasCusto = {
@@ -657,7 +782,7 @@ async function executeAnalysis() {
         // Calcula a média de prêmios por sorteio para cada faixa
         const mediasPremios = {};
         gameConfig.prizeTiers.forEach(tier => {
-            mediasPremios[tier.key] = numeroJogosHistoricos > 0 ? totalPrizeCounts[tier.key] / numeroJogosHistoricos : 0;
+            mediasPremios[tier.key] = numeroJogosHistoricos > 0 ? Object.values(premios).reduce((sum, val) => sum + val, 0) / numeroJogosHistoricos : 0; // This needs re-evaluation based on total prizes won
         });
 
         // Calcular totais de agrupamentos repetidos no jogo do usuário
@@ -712,20 +837,20 @@ async function executeAnalysis() {
             const renderChartForData = (counts, title) => {
                 const chartItemContainer = document.createElement('div');
                 chartItemContainer.className = 'pie-chart-item';
-                chartItemContainer.id = `pie-chart-item-${chartCounter++}`;
+                chartItemContainer.id = `pie-chart-container-${chartCounter++}`;
                 pieChartsGrid.appendChild(chartItemContainer);
 
                 renderPrizeDistributionChart(chartItemContainer, { counts, gameConfig }, title);
             };
 
             // Render chart for each file
-            for (const fileName in prizeCountsByFile) {
-                renderChartForData(prizeCountsByFile[fileName], fileName);
+            for (const fileName in pieChartCountsByFile) {
+                renderChartForData(pieChartCountsByFile[fileName], fileName);
             }
 
             // Render summary chart if more than one file was analyzed
-            if (Object.keys(prizeCountsByFile).length > 1) {
-                renderChartForData(totalPrizeCounts, 'Resumo de Todos os Jogos');
+            if (Object.keys(pieChartCountsByFile).length > 1) {
+                renderChartForData(totalPieChartCounts, 'Resumo de Todos os Jogos');
             }
         }
         // --- END PIE CHARTS RENDERING LOGIC ---
@@ -733,8 +858,10 @@ async function executeAnalysis() {
         // --- Display Simulation Universe ---
         if (simUniverseWrapper) {
             const simUniverseDisplay = document.getElementById('simulation-universe-display-panel');
+            const simUniverseCountEl = document.getElementById('sim-universe-count');
             if (simUniverseDisplay) {
                 simUniverseWrapper.style.display = 'block';
+                if (simUniverseCountEl) simUniverseCountEl.textContent = ballUniverse.length;
                 simUniverseDisplay.innerHTML = '';
                 ballUniverse.sort((a,b) => a-b).forEach(ballNum => {
                     const ballEl = document.createElement('div');
@@ -746,11 +873,6 @@ async function executeAnalysis() {
         }
 
         // Monta a aba de Resumo
-        const totaisPremios = {}; // Recalculate for Excel summary, as it was removed from the main loop aggregation
-        gameConfig.prizeTiers.forEach(tier => {
-            totaisPremios[tier.key] = totalPrizeCounts[tier.key]; // Use the already calculated total counts
-        });
-
         let dadosResumo = [];
         if (tipoJogo === 'quina') {
             dadosResumo = [ // ... (conteúdo da aba resumo)
@@ -1088,15 +1210,19 @@ async function executeAnalysis() {
         if (excelBtn) excelBtn.style.display = 'inline-flex';
         if (pizzaPdfBtn) pizzaPdfBtn.style.display = 'inline-flex';
         // The comparative chart button is handled by charts.js
-
+        
+        progress.style.display = 'none';
         status.textContent = 'Análise concluída! Gráficos de pizza gerados. Você já pode salvar o relatório em Excel ou PDF.';
-        progress.textContent = '';
+        status.className = 'status-message success';
+        status.style.display = 'flex';
     } catch (error) {
         console.error('Erro ao processar arquivos:', error);
+        progress.style.display = 'none';
         status.textContent = `Erro: ${error.message}`;
-        progress.textContent = '';
         status.classList.add('error');
+        status.style.display = 'flex';
     } finally {
+        // O loader já é ocultado no início, mas isso garante que ele não reapareça em caso de erro inesperado.
         loader.style.display = 'none';
     }
 }

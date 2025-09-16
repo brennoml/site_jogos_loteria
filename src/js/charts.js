@@ -1,5 +1,5 @@
 import { parseBrazilianNumber } from './validators.js';
-import { randomChoice } from './utils.js';
+import { randomChoice, combinationsCount } from './utils.js';
 
 // Constantes locais de prêmios padrão (cópia da constants.js)
 const PRIZE_DEFAULTS = {
@@ -54,6 +54,23 @@ const GAME_CHART_CONFIG = {
     }
 };
 
+// Tabela de custos por quantidade de dezenas jogadas.
+// Fonte: Caixa Econômica Federal (valores de exemplo).
+const GAME_COSTS = {
+    megasena: {
+        6: 6.00, 7: 42.00, 8: 168.00, 9: 504.00, 10: 1260.00,
+        11: 2772.00, 12: 5544.00, 13: 10296.00, 14: 18018.00, 15: 30030.00,
+        16: 48048.00, 17: 74256.00, 18: 111384.00, 19: 162792.00, 20: 232560.00
+    },
+    quina: {
+        5: 3.00, 6: 18.00, 7: 63.00, 8: 168.00, 9: 378.00,
+        10: 756.00, 11: 1386.00, 12: 2376.00, 13: 3861.00, 14: 6006.00, 15: 9009.00
+    },
+    lotofacil: {
+        15: 3.50, 16: 56.00, 17: 476.00, 18: 2856.00, 19: 13566.00, 20: 54264.00
+    }
+};
+
 // Variável global para armazenar a instância do gráfico atual
 let currentChart = null;
 let currentChartData = null;
@@ -93,15 +110,27 @@ function calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios) {
         let premioTotal = 0;
 
         jogos.forEach(jogo => {
-            const acertos = jogo.filter(num => numerosHistoricos.has(num)).length;
-            const tierHit = gameConfig.prizeTiers.find(tier => tier.hits === acertos);
-            if (tierHit) {
-                // Acessa o valor do prêmio pelo 'key' do tier (ex: 'quadra', 'quina')
-                // O objeto 'premios' deve ter chaves correspondentes.
-                if (premios[tierHit.key] !== undefined) {
-                    premioTotal += premios[tierHit.key];
+            const dezenasDoJogo = jogo;
+            const acertosNoJogo = dezenasDoJogo.filter(num => numerosHistoricos.has(num)).length;
+
+            gameConfig.prizeTiers.forEach(tier => {
+                // tier.hits é o número de acertos para um prêmio (ex: 4 para quadra)
+                // gameConfig.expectedNumbers é o tamanho de um jogo simples (ex: 6 para megasena)
+                if (acertosNoJogo >= tier.hits && dezenasDoJogo.length >= tier.hits) {
+                    const dezenasNaoSorteadasNoJogo = dezenasDoJogo.length - acertosNoJogo;
+                    const dezenasASeremSorteadasDasNaoSorteadas = gameConfig.expectedNumbers - tier.hits;
+
+                    if (dezenasNaoSorteadasNoJogo >= dezenasASeremSorteadasDasNaoSorteadas && dezenasASeremSorteadasDasNaoSorteadas >= 0) {
+                        const combinacoesDeAcertos = combinationsCount(acertosNoJogo, tier.hits);
+                        const combinacoesDeNaoAcertos = combinationsCount(dezenasNaoSorteadasNoJogo, dezenasASeremSorteadasDasNaoSorteadas);
+                        const totalPremiosDesteTipo = combinacoesDeAcertos * combinacoesDeNaoAcertos;
+
+                        if (totalPremiosDesteTipo > 0 && premios[tier.key] !== undefined) {
+                            premioTotal += totalPremiosDesteTipo * premios[tier.key];
+                        }
+                    }
                 }
-            }
+            });
         });
 
         return premioTotal;
@@ -537,14 +566,15 @@ async function generateResultCharts() {
 
         // Coletar arquivos selecionados
         const arquivos = [];
-        document.querySelectorAll('#analise-file-list .file-item-analise').forEach(item => {
-            const checkbox = item.querySelector('input[type="checkbox"]');
+        document.querySelectorAll('#analise-file-list .file-item-analise-wrapper').forEach(wrapper => {
+            const checkbox = wrapper.querySelector('.file-item-analise input[type="checkbox"]');
             if (checkbox && checkbox.checked) {
-                const fileId = item.dataset.fileId;
-                if (window.analiseFiles && window.analiseFiles[fileId]) {
+                const gameId = wrapper.dataset.itemId;
+                const gameData = window.managedGames[gameId];
+                if (gameData) {
                     arquivos.push({
-                        file: window.analiseFiles[fileId].file,
-                        name: window.analiseFiles[fileId].name.replace(/\.xlsx$/i, ''),
+                        gameData: gameData,
+                        name: gameData.name.replace(/\.xlsx$/i, ''),
                     });
                 }
             }
@@ -554,25 +584,11 @@ async function generateResultCharts() {
             throw new Error('Por favor, adicione e selecione pelo menos um arquivo de jogo para análise.');
         }
 
-        // Simular sorteios, usando a mesma lógica da aba de Análise
-        progress.textContent = 'Preparando simulação...';
-        const selectedSimBalls = Array.from(document.querySelectorAll('#simulation-ball-panel .ball.active')).map(b => parseInt(b.dataset.number, 10));
+        // USA OS RESULTADOS DA SIMULAÇÃO JÁ REALIZADA PELA ANÁLISE PRINCIPAL
+        progress.textContent = 'Utilizando resultados da simulação principal...';
+        const resultadosHistoricos = window.analysisSimulationResults;
 
-        if (selectedSimBalls.length < gameConfig.expectedNumbers) {
-            // This error is now primarily for the user to see in the context of this specific action
-            throw new Error(`O número de bolas selecionadas para simulação (${selectedSimBalls.length}) é menor que o necessário para um sorteio (${gameConfig.expectedNumbers}). Selecione mais bolas no painel de parâmetros.`);
-        }
-        const ballUniverse = selectedSimBalls;
-
-        const simulationCount = parseInt(document.getElementById('simulatedGamesCount').value, 10);
-        progress.textContent = `Simulando ${simulationCount.toLocaleString('pt-BR')} sorteios...`;
-        const resultadosHistoricos = [];
-        for (let i = 0; i < simulationCount; i++) {
-            const draw = randomChoice(ballUniverse, null, gameConfig.expectedNumbers, false);
-            resultadosHistoricos.push(draw.sort((a, b) => a - b));
-        }
-
-        if (resultadosHistoricos.length === 0) {
+        if (!resultadosHistoricos || resultadosHistoricos.length === 0) {
             throw new Error('Nenhum sorteio foi simulado. Verifique as configurações.');
         }
 
@@ -617,17 +633,37 @@ async function generateResultCharts() {
         const colors = [
             '#2563eb', '#059669', '#f59e0b', '#dc2626', '#7c3aed', '#06b6d4'
         ];
+        const costTable = GAME_COSTS[tipoJogo] || {};
 
         for (let i = 0; i < arquivos.length; i++) {
             const arquivo = arquivos[i];
             progress.textContent = `Processando arquivo ${i + 1} de ${arquivos.length}: ${arquivo.name}...`;
 
-            const jogos = await readGamesFromFile(arquivo.file, gameConfig.expectedNumbers, gameConfig.maxBalls);
+            let jogos;
+            if (arquivo.gameData.type === 'external') {
+                jogos = await readGamesFromFile(arquivo.gameData.file, gameConfig.expectedNumbers, gameConfig.maxBalls);
+            } else if (arquivo.gameData.type === 'generated' && arquivo.gameData.allGames) {
+                // The games are already in memory, just need to ensure they are valid for the current context
+                jogos = arquivo.gameData.allGames
+                    .map(row => row.filter(num => num >= 1 && num <= gameConfig.maxBalls).map(Number))
+                    .filter(row => row.length > 0)
+                    .map(row => row.sort((a, b) => a - b));
+            } else {
+                jogos = [];
+            }
             
             if (jogos.length === 0) {
-                console.warn(`Nenhum jogo válido encontrado no arquivo: ${arquivo.name}`);
+                console.warn(`Nenhum jogo válido encontrado no item: ${arquivo.name}`);
                 continue;
             }
+
+            // Calcula o custo total para os jogos deste arquivo
+            let custoTotalArquivo = 0;
+            jogos.forEach(jogo => {
+                custoTotalArquivo += costTable[jogo.length] || 0;
+            });
+            const custoTotalFormatado = formatCurrency(custoTotalArquivo);
+            const newLabel = `${arquivo.name} (Custo: ${custoTotalFormatado})`;
 
             const premiosPorSorteio = calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios);
             const dadosOrdenados = premiosPorSorteio
@@ -635,7 +671,7 @@ async function generateResultCharts() {
                 .sort((a, b) => a.premio - b.premio);
 
             datasets.push({
-                label: arquivo.name,
+                label: newLabel,
                 data: dadosOrdenados.map(d => d.premio),
                 borderColor: colors[i % colors.length],
                 backgroundColor: colors[i % colors.length] + '20',

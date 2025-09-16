@@ -228,8 +228,8 @@ function formatBrazilianPercentage(value) {
  * @param {number} [tempoDecorrido] - Tempo total decorrido em segundos.
  * @param {number} [tempoRestante] - Tempo restante estimado/timeout em segundos.
  */
-async function updateProgress(jogosGerados, totalJogosAlvo, isAleatorio, progressPercent = null, info = "", tempoDecorrido = 0, tempoRestante = 0) {
-    const progressElement = document.getElementById('progress-geracao');
+async function updateProgress(elementId, currentCount, totalCount, isAleatorio, progressPercent = null, info = "", countLabel = "Gerados", tempoDecorrido = 0, tempoRestante = 0) {
+    const progressElement = document.getElementById(elementId);
     if (!progressElement) return;
 
     const formatTime = (seconds) => {
@@ -237,27 +237,34 @@ async function updateProgress(jogosGerados, totalJogosAlvo, isAleatorio, progres
         const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
         const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
         const s = Math.floor(seconds % 60).toString().padStart(2, '0');
-        return `${h}:${m}:${s}`;
+        if (h !== '00') {
+            return `${h}:${m}:${s}`;
+        }
+        return `${m}:${s}`;
     };
 
     return new Promise(resolve => {
         requestAnimationFrame(() => {
             let html;
             if (isAleatorio) {
-                const percentualGerados = totalJogosAlvo > 0 ? (jogosGerados / totalJogosAlvo) * 100 : 0;
+                const percentualGerados = totalCount > 0 ? (currentCount / totalCount) * 100 : 0;
                 html = `
                     <div class="progress-bar-modern">
                         <div class="progress-fill" style="width: ${percentualGerados.toFixed(2)}%;"></div>
-                        <span class="progress-label">Gerados: ${jogosGerados.toLocaleString('pt-BR')} / ${totalJogosAlvo.toLocaleString('pt-BR')}</span>
+                        <span class="progress-label">${countLabel}: ${currentCount.toLocaleString('pt-BR')} / ${totalCount.toLocaleString('pt-BR')}</span>
                     </div>
                     <div class="progress-details">
                         <span>${info}</span>
                         <span>Tempo: ${formatTime(tempoDecorrido)}</span>
-                        <span>Timeout: ${formatTime(tempoRestante)}</span>
+                        <span>Restante: ~${formatTime(tempoRestante)}</span>
                     </div>
                 `;
             } else {
                 const percentText = progressPercent !== null ? `${progressPercent.toFixed(2)}%` : '0.00%';
+                let countHtml = '';
+                if (countLabel && currentCount !== null) {
+                    countHtml = `<span>${countLabel}: ${currentCount.toLocaleString('pt-BR')}</span>`;
+                }
                 html = `
                     <div class="progress-bar-modern">
                         <div class="progress-fill" style="width: ${percentText};"></div>
@@ -265,7 +272,7 @@ async function updateProgress(jogosGerados, totalJogosAlvo, isAleatorio, progres
                     </div>
                     <div class="progress-details">
                         <span>${info}</span>
-                        <span>Gerados: ${jogosGerados.toLocaleString('pt-BR')}</span>
+                        ${countHtml}
                         <span>Tempo: ${formatTime(tempoDecorrido)} / ~${formatTime(tempoRestante)}</span>
                     </div>
                 `;
@@ -276,4 +283,44 @@ async function updateProgress(jogosGerados, totalJogosAlvo, isAleatorio, progres
     });
 }
 
-export { combinations, randomChoice, getSubconjuntos, jogosJaGerados, formatBrazilianCurrency, formatBrazilianPercentage, updateProgress, combinationsCount, combinationsGenerator };
+/**
+ * Calculates internal repetitions of combinations within a set of games for various group sizes.
+ * @param {Array<Array<number>>} games - The list of games to analyze.
+ * @param {Array<number>} groupSizes - An array of combination sizes to check for (e.g., [4, 5, 6]).
+ * @returns {object} An object with counts of repeated combinations (e.g., { 4: 10, 5: 2 }).
+ */
+function calculateInternalRepetitions(games, groupSizes) {
+    const repetitions = {};
+    
+    groupSizes.forEach(size => {
+        const combinationCounts = {};
+        let repeatedCount = 0;
+
+        games.forEach(game => {
+            if (game.length >= size) {
+                // Ensure game is sorted for consistent combination keys
+                const sortedGame = [...game].sort((a, b) => a - b);
+                const combos = combinations(sortedGame, size);
+                combos.forEach(combo => {
+                    // The combo from `combinations` will be sorted if the input is sorted.
+                    const key = JSON.stringify(combo);
+                    combinationCounts[key] = (combinationCounts[key] || 0) + 1;
+                });
+            }
+        });
+
+        for (const key in combinationCounts) {
+            if (combinationCounts[key] > 1) {
+                repeatedCount++;
+            }
+        }
+        
+        if (repeatedCount > 0) {
+            repetitions[size] = repeatedCount;
+        }
+    });
+
+    return repetitions;
+}
+
+export { combinations, randomChoice, getSubconjuntos, jogosJaGerados, formatBrazilianCurrency, formatBrazilianPercentage, updateProgress, combinationsCount, combinationsGenerator, calculateInternalRepetitions };
