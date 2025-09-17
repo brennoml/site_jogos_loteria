@@ -1,79 +1,11 @@
 import { parseBrazilianNumber } from './validators.js';
-import { randomChoice, combinationsCount } from './utils.js';
+import { calculatePrizesForGames as calculatePrizesForSingleDraw } from './utils.js';
+import { PRIZE_DEFAULTS, GAME_COSTS } from './constants.js';
+import { GAME_ANALYSIS_CONFIG } from './analyze.js';
+import { validateAndGetFileInfo } from './validators.js';
 
-// Constantes locais de prêmios padrão (cópia da constants.js)
-const PRIZE_DEFAULTS = {
-    megasena: {
-        quadra: 1000,
-        quina: 80000,
-        sena: 500000000
-    },
-    quina: {
-        duque: 6,
-        terno: 120,
-        quadra: 7000,
-        quina: 230000000
-    },
-    lotofacil: {
-        onze: 7,
-        doze: 14,
-        treze: 35,
-        quatorze: 2000,
-        quinze: 1000000
-    }
-};
-
-// Configurações de jogo para os gráficos, similar ao analyze.js
-const GAME_CHART_CONFIG = {
-    megasena: {
-        expectedNumbers: 6,
-        maxBalls: 60,
-        prizeTiers: [
-            { key: 'quadra', hits: 4 },
-            { key: 'quina', hits: 5 },
-            { key: 'sena', hits: 6 }
-        ]
-    },
-    quina: {
-        expectedNumbers: 5,
-        maxBalls: 80,
-        prizeTiers: [
-            { key: 'duque', hits: 2 },
-            { key: 'terno', hits: 3 },
-            { key: 'quadra', hits: 4 },
-            { key: 'quina', hits: 5 }
-        ]
-    },
-    lotofacil: {
-        expectedNumbers: 15,
-        maxBalls: 25,
-        prizeTiers: [
-            { key: 'onze', hits: 11 }, { key: 'doze', hits: 12 }, { key: 'treze', hits: 13 },
-            { key: 'quatorze', hits: 14 }, { key: 'quinze', hits: 15 }
-        ]
-    }
-};
-
-// Tabela de custos por quantidade de dezenas jogadas.
-// Fonte: Caixa Econômica Federal (valores de exemplo).
-const GAME_COSTS = {
-    megasena: {
-        6: 6.00, 7: 42.00, 8: 168.00, 9: 504.00, 10: 1260.00,
-        11: 2772.00, 12: 5544.00, 13: 10296.00, 14: 18018.00, 15: 30030.00,
-        16: 48048.00, 17: 74256.00, 18: 111384.00, 19: 162792.00, 20: 232560.00
-    },
-    quina: {
-        5: 3.00, 6: 18.00, 7: 63.00, 8: 168.00, 9: 378.00,
-        10: 756.00, 11: 1386.00, 12: 2376.00, 13: 3861.00, 14: 6006.00, 15: 9009.00
-    },
-    lotofacil: {
-        15: 3.50, 16: 56.00, 17: 476.00, 18: 2856.00, 19: 13566.00, 20: 54264.00
-    }
-};
-
-// Variável global para armazenar a instância do gráfico atual
-let currentChart = null;
-let currentChartData = null;
+// Objeto para armazenar as instâncias dos gráficos atuais
+const chartInstances = {};
 
 /**
  * Lê jogos de um arquivo Excel para análise gráfica
@@ -82,59 +14,14 @@ let currentChartData = null;
  * @param {number} maxBalls - Valor máximo válido para as bolas
  * @returns {Promise<Array<Array<number>>>} Array de jogos válidos
  */
-async function readGamesFromFile(file, numerosEsperados, maxBalls) {
-    try {
-        const data = await file.arrayBuffer();
-        const workbook = XLSX.read(data, { type: 'array' });
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
-
-        return jsonData
-            .map(row => row.filter(num => num !== null && !isNaN(Number(num)) && 
-                Number.isInteger(Number(num)) && Number(num) >= 1 && Number(num) <= maxBalls).map(Number))
-            .filter(row => row.length > 0)
-            .map(row => row.sort((a, b) => a - b));
-
-    } catch (error) {
-        console.error('Erro ao ler arquivo de jogos:', error);
-        throw new Error('Erro ao processar o arquivo. Verifique o formato.');
-    }
-}
 
 /**
  * Calcula os prêmios para cada sorteio histórico.
  */
-function calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios) {
-    return resultadosHistoricos.map(resultado => {
-        const numerosHistoricos = new Set(resultado);
-        let premioTotal = 0;
-
-        jogos.forEach(jogo => {
-            const dezenasDoJogo = jogo;
-            const acertosNoJogo = dezenasDoJogo.filter(num => numerosHistoricos.has(num)).length;
-
-            gameConfig.prizeTiers.forEach(tier => {
-                // tier.hits é o número de acertos para um prêmio (ex: 4 para quadra)
-                // gameConfig.expectedNumbers é o tamanho de um jogo simples (ex: 6 para megasena)
-                if (acertosNoJogo >= tier.hits && dezenasDoJogo.length >= tier.hits) {
-                    const dezenasNaoSorteadasNoJogo = dezenasDoJogo.length - acertosNoJogo;
-                    const dezenasASeremSorteadasDasNaoSorteadas = gameConfig.expectedNumbers - tier.hits;
-
-                    if (dezenasNaoSorteadasNoJogo >= dezenasASeremSorteadasDasNaoSorteadas && dezenasASeremSorteadasDasNaoSorteadas >= 0) {
-                        const combinacoesDeAcertos = combinationsCount(acertosNoJogo, tier.hits);
-                        const combinacoesDeNaoAcertos = combinationsCount(dezenasNaoSorteadasNoJogo, dezenasASeremSorteadasDasNaoSorteadas);
-                        const totalPremiosDesteTipo = combinacoesDeAcertos * combinacoesDeNaoAcertos;
-
-                        if (totalPremiosDesteTipo > 0 && premios[tier.key] !== undefined) {
-                            premioTotal += totalPremiosDesteTipo * premios[tier.key];
-                        }
-                    }
-                }
-            });
-        });
-
-        return premioTotal;
-    });
+function calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios, downgradeMaxPrize = false) {
+    return resultadosHistoricos.map(resultado => 
+        calculatePrizesForSingleDraw(jogos, resultado, gameConfig, premios, downgradeMaxPrize)
+    );
 }
 
 /**
@@ -155,11 +42,27 @@ function getAxisConfig() {
 }
 
 /**
+ * Obtém as configurações dos eixos do gráfico de distribuição.
+ */
+function getDistAxisConfig() {
+    const xMinElement = document.getElementById('dist-grafico-eixo-x-min');
+    const xMaxElement = document.getElementById('dist-grafico-eixo-x-max');
+    const yMinElement = document.getElementById('dist-grafico-eixo-y-min');
+    const yMaxElement = document.getElementById('dist-grafico-eixo-y-max');
+
+    return {
+        xMin: xMinElement ? parseBrazilianNumber(xMinElement.value) || null : null,
+        xMax: xMaxElement ? parseBrazilianNumber(xMaxElement.value) || null : null,
+        yMin: yMinElement ? parseBrazilianNumber(yMinElement.value) || null : null,
+        yMax: yMaxElement ? parseBrazilianNumber(yMaxElement.value) || null : null
+    };
+}
+/**
  * Cria um gráfico usando Chart.js.
  */
 function createChart(canvasId, datasets, labels, title, axisConfig = {}) {
-    if (currentChart) {
-        currentChart.destroy();
+    if (chartInstances[canvasId]) {
+        chartInstances[canvasId].destroy();
     }
 
     const ctx = document.getElementById(canvasId);
@@ -231,7 +134,7 @@ function createChart(canvasId, datasets, labels, title, axisConfig = {}) {
         scalesConfig.y.max = axisConfig.yMax;
     }
     
-    currentChart = new Chart(context, {
+    const chart = new Chart(context, {
         type: 'line',
         data: {
             labels: labels,
@@ -282,15 +185,141 @@ function createChart(canvasId, datasets, labels, title, axisConfig = {}) {
         }
     });
 
-    currentChartData = { datasets, labels, title };
+    chartInstances[canvasId] = chart;
+}
+
+/**
+ * Cria um gráfico de distribuição de prêmios usando Chart.js.
+ * @param {string} canvasId - ID do elemento canvas.
+ * @param {Array} datasets - Os datasets para o gráfico.
+ * @param {string} title - O título do gráfico.
+ */
+function createPrizeDistributionChart(canvasId, datasets, title, axisConfig = {}) {
+    if (chartInstances[canvasId]) {
+        chartInstances[canvasId].destroy();
+    }
+
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) {
+        throw new Error(`Elemento canvas para gráfico '${canvasId}' não encontrado`);
+    }
+    
+    const context = ctx.getContext('2d');
+    
+    const scalesConfig = {
+        x: {
+            type: 'linear', // Eixo X é numérico (valor do prêmio)
+            display: true,
+            title: {
+                display: true,
+                text: 'Valor do Prêmio (R$)',
+                color: '#374151',
+                font: { size: 14, weight: 'bold' }
+            },
+            grid: {
+                color: 'rgba(0, 0, 0, 0.1)'
+            },
+            ticks: {
+                callback: function(value) {
+                    return new Intl.NumberFormat('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL'
+                    }).format(value);
+                }
+            }
+        },
+        y: {
+            display: true,
+            position: 'right',
+            title: {
+                display: true,
+                text: 'Quantidade de Sorteios',
+                color: '#374151',
+                font: { size: 14, weight: 'bold' }
+            },
+            grid: {
+                color: 'rgba(0, 0, 0, 0.1)'
+            },
+            ticks: {
+                // Apenas inteiros no eixo Y
+                precision: 0,
+                beginAtZero: true
+            }
+        }
+    };
+
+    // Aplicar configurações personalizadas dos eixos
+    if (axisConfig.xMin !== undefined && axisConfig.xMin !== null && axisConfig.xMin !== '') {
+        scalesConfig.x.min = axisConfig.xMin;
+    }
+    if (axisConfig.xMax !== undefined && axisConfig.xMax !== null && axisConfig.xMax !== '') {
+        scalesConfig.x.max = axisConfig.xMax;
+    }
+    if (axisConfig.yMin !== undefined && axisConfig.yMin !== null && axisConfig.yMin !== '') {
+        scalesConfig.y.min = axisConfig.yMin;
+    }
+    if (axisConfig.yMax !== undefined && axisConfig.yMax !== null && axisConfig.yMax !== '') {
+        scalesConfig.y.max = axisConfig.yMax;
+    }
+    
+    const chart = new Chart(context, {
+        type: 'line',
+        data: {
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: title,
+                    font: { size: 18, weight: 'bold' },
+                    color: '#1f2937'
+                },
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 20
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        title: function(context) {
+                            const value = context[0].parsed.x;
+                            const formattedValue = new Intl.NumberFormat('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL'
+                            }).format(value);
+                            return `Prêmio de ${formattedValue}`;
+                        },
+                        label: function(context) {
+                            const count = context.parsed.y;
+                            return `${context.dataset.label}: ${count} sorteio(s)`;
+                        }
+                    }
+                }
+            },
+            scales: scalesConfig,
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            }
+        }
+    });
+
+    chartInstances[canvasId] = chart;
 }
 
 /**
  * Atualiza os eixos do gráfico atual.
  */
 function updateChartAxes() {
-    if (!currentChart || !currentChartData) {
-        console.warn('Nenhum gráfico ativo para atualizar');
+    const mainChart = chartInstances['resultsChart'];
+    if (!mainChart) {
+        console.warn('Nenhum gráfico principal ativo para atualizar');
         return;
     }
 
@@ -299,45 +328,86 @@ function updateChartAxes() {
     // Atualizar configurações dos eixos
     if (axisConfig.xMin !== undefined && axisConfig.xMin !== null && axisConfig.xMin !== '') {
         // Para eixo X, converter de percentual para índice
-        const totalItems = currentChart.data.labels.length;
-        currentChart.options.scales.x.min = Math.floor((axisConfig.xMin / 100) * totalItems) - 1;
+        const totalItems = mainChart.data.labels.length;
+        mainChart.options.scales.x.min = Math.floor((axisConfig.xMin / 100) * totalItems) - 1;
     } else {
-        delete currentChart.options.scales.x.min;
+        delete mainChart.options.scales.x.min;
     }
     
     if (axisConfig.xMax !== undefined && axisConfig.xMax !== null && axisConfig.xMax !== '') {
         // Para eixo X, converter de percentual para índice
-        const totalItems = currentChart.data.labels.length;
-        currentChart.options.scales.x.max = Math.floor((axisConfig.xMax / 100) * totalItems) - 1;
+        const totalItems = mainChart.data.labels.length;
+        mainChart.options.scales.x.max = Math.floor((axisConfig.xMax / 100) * totalItems) - 1;
     } else {
-        delete currentChart.options.scales.x.max;
+        delete mainChart.options.scales.x.max;
     }
     
     if (axisConfig.yMin !== undefined && axisConfig.yMin !== null && axisConfig.yMin !== '') {
-        currentChart.options.scales.y.min = axisConfig.yMin;
+        mainChart.options.scales.y.min = axisConfig.yMin;
     } else {
-        delete currentChart.options.scales.y.min;
+        delete mainChart.options.scales.y.min;
     }
     
     if (axisConfig.yMax !== undefined && axisConfig.yMax !== null && axisConfig.yMax !== '') {
-        currentChart.options.scales.y.max = axisConfig.yMax;
+        mainChart.options.scales.y.max = axisConfig.yMax;
     } else {
-        delete currentChart.options.scales.y.max;
+        delete mainChart.options.scales.y.max;
     }
 
-    currentChart.update();
+    mainChart.update();
 }
 
+/**
+ * Atualiza os eixos do gráfico de distribuição.
+ */
+function updateDistChartAxes() {
+    const distChart = chartInstances['distributionChart'];
+    if (!distChart) {
+        console.warn('Nenhum gráfico de distribuição ativo para atualizar');
+        return;
+    }
+
+    const axisConfig = getDistAxisConfig();
+    
+    // Update X axis
+    if (axisConfig.xMin !== undefined && axisConfig.xMin !== null && axisConfig.xMin !== '') {
+        distChart.options.scales.x.min = axisConfig.xMin;
+    } else {
+        delete distChart.options.scales.x.min;
+    }
+    
+    if (axisConfig.xMax !== undefined && axisConfig.xMax !== null && axisConfig.xMax !== '') {
+        distChart.options.scales.x.max = axisConfig.xMax;
+    } else {
+        delete distChart.options.scales.x.max;
+    }
+    
+    // Update Y axis
+    if (axisConfig.yMin !== undefined && axisConfig.yMin !== null && axisConfig.yMin !== '') {
+        distChart.options.scales.y.min = axisConfig.yMin;
+    } else {
+        delete distChart.options.scales.y.min;
+    }
+    
+    if (axisConfig.yMax !== undefined && axisConfig.yMax !== null && axisConfig.yMax !== '') {
+        distChart.options.scales.y.max = axisConfig.yMax;
+    } else {
+        delete distChart.options.scales.y.max;
+    }
+
+    distChart.update();
+}
 /**
  * Preenche sugestões automáticas nos campos de eixos.
  */
 function populateAxisSuggestions() {
-    if (!currentChartData) return;
+    const mainChart = chartInstances['resultsChart'];
+    if (!mainChart) return;
 
     let minX = 0, maxX = 100; // Para percentuais
     let minY = Infinity, maxY = -Infinity;
 
-    currentChartData.datasets.forEach(dataset => {
+    mainChart.data.datasets.forEach(dataset => {
         dataset.data.forEach(value => {
             if (typeof value === 'number' && !isNaN(value)) {
                 minY = Math.min(minY, value);
@@ -366,11 +436,55 @@ function populateAxisSuggestions() {
 }
 
 /**
+ * Preenche sugestões automáticas nos campos de eixos do gráfico de distribuição.
+ */
+function populateDistAxisSuggestions() {
+    const distChart = chartInstances['distributionChart'];
+    if (!distChart) return;
+
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+
+    distChart.data.datasets.forEach(dataset => {
+        dataset.data.forEach(point => {
+            if (typeof point.x === 'number' && !isNaN(point.x)) {
+                minX = Math.min(minX, point.x);
+                maxX = Math.max(maxX, point.x);
+            }
+            if (typeof point.y === 'number' && !isNaN(point.y)) {
+                minY = Math.min(minY, point.y);
+                maxY = Math.max(maxY, point.y);
+            }
+        });
+    });
+
+    const xMinInput = document.getElementById('dist-grafico-eixo-x-min');
+    const xMaxInput = document.getElementById('dist-grafico-eixo-x-max');
+    const yMinInput = document.getElementById('dist-grafico-eixo-y-min');
+    const yMaxInput = document.getElementById('dist-grafico-eixo-y-max');
+
+    if (xMinInput && !xMinInput.value) {
+        xMinInput.placeholder = `Mín: ${minX !== Infinity ? formatCurrency(minX) : 'Auto'}`;
+    }
+    if (xMaxInput && !xMaxInput.value) {
+        xMaxInput.placeholder = `Máx: ${maxX !== -Infinity ? formatCurrency(maxX) : 'Auto'}`;
+    }
+    if (yMinInput && !yMinInput.value) {
+        yMinInput.placeholder = `Mín: ${minY !== Infinity ? minY.toLocaleString('pt-BR') : 'Auto'}`;
+    }
+    if (yMaxInput && !yMaxInput.value) {
+        yMaxInput.placeholder = `Máx: ${maxY !== -Infinity ? maxY.toLocaleString('pt-BR') : 'Auto'}`;
+    }
+}
+
+
+/**
  * Imprime o gráfico atual em PDF.
  */
 function printChartToPDF() {
-    if (!currentChart || !currentChartData) {
-        alert('Nenhum gráfico disponível para imprimir. Gere um gráfico primeiro.');
+    const mainChart = chartInstances['resultsChart'];
+    if (!mainChart) {
+        alert('Nenhum gráfico principal disponível para imprimir. Gere um gráfico primeiro.');
         return;
     }
 
@@ -455,7 +569,7 @@ function printChartToPDF() {
         });
 
         // Adicionar informações sobre os arquivos analisados
-        const datasetsInfo = currentChartData.datasets.map(dataset => `• ${dataset.label}`);
+        const datasetsInfo = mainChart.data.datasets.map(dataset => `• ${dataset.label}`);
         const filesStartX = margin + 120;
         let filesCurrentY = infoStartY;
         
@@ -513,13 +627,24 @@ function resetAxisSliders() {
 }
 
 /**
+ * Reseta os sliders do gráfico de distribuição para os valores padrão.
+ */
+function resetDistAxisSliders() {
+    const inputs = ['dist-grafico-eixo-x-min', 'dist-grafico-eixo-x-max', 'dist-grafico-eixo-y-min', 'dist-grafico-eixo-y-max'];
+    inputs.forEach(inputId => {
+        const input = document.getElementById(inputId);
+        if (input) input.value = '';
+    });
+}
+/**
  * Função principal para gerar gráficos de resultados.
  */
 async function generateResultCharts() {
     const status = document.getElementById('status-graficos');
     const progress = document.getElementById('progress-graficos');
     const loader = document.getElementById('loader-graficos');
-    const container = document.getElementById('graficos-container');
+    const orderedContainer = document.getElementById('ordenados-chart-container');
+    const distContainer = document.getElementById('distribuicao-chart-container');
     const section = document.getElementById('analise-graficos-section');
     const printBtn = document.getElementById('btn-imprimir-grafico-analise');
 
@@ -532,7 +657,7 @@ async function generateResultCharts() {
         printBtn.style.display = 'none';
     }
 
-    if (!status || !progress || !loader || !container) {
+    if (!status || !progress || !loader || !orderedContainer || !distContainer) {
         console.error('Elementos de gráficos não encontrados');
         alert('Elementos da interface de gráficos não encontrados');
         return;
@@ -544,8 +669,8 @@ async function generateResultCharts() {
     progress.textContent = 'Iniciando...';
     progress.style.display = 'flex';
     loader.style.display = 'flex';
-    container.innerHTML = '';
-    container.style.display = 'none';
+    if (orderedContainer) orderedContainer.innerHTML = '';
+    if (distContainer) distContainer.innerHTML = '';
 
     try {
         // Verificar se XLSX está disponível
@@ -558,8 +683,11 @@ async function generateResultCharts() {
             throw new Error('Biblioteca Chart.js não está carregada. Verifique se o script está incluído no HTML.');
         }
 
+        // Ler a nova opção de rebaixamento de prêmio
+        const downgradeMaxPrize = document.getElementById('downgradeMaxPrize')?.checked || false;
+
         const tipoJogo = document.getElementById('gameTypeGlobal').value;
-        const gameConfig = GAME_CHART_CONFIG[tipoJogo];
+        const gameConfig = GAME_ANALYSIS_CONFIG[tipoJogo];
         if (!gameConfig) {
             throw new Error(`Configurações de jogo não encontradas para "${tipoJogo}"`);
         }
@@ -567,6 +695,11 @@ async function generateResultCharts() {
         // Coletar arquivos selecionados
         const arquivos = [];
         document.querySelectorAll('#analise-file-list .file-item-analise-wrapper').forEach(wrapper => {
+            // Adicionado: Pular itens que não estão visíveis (filtrados por tipo de jogo)
+            if (wrapper.style.display === 'none') {
+                return; // 'return' em forEach é como 'continue' em um loop for.
+            }
+
             const checkbox = wrapper.querySelector('.file-item-analise input[type="checkbox"]');
             if (checkbox && checkbox.checked) {
                 const gameId = wrapper.dataset.itemId;
@@ -594,42 +727,17 @@ async function generateResultCharts() {
 
         // Coletar valores de prêmios com verificação segura de elementos
         const premios = {};
-        if (tipoJogo === 'quina') {
-            const quinaDuqueElement = document.getElementById('quinaDuqueAnalise');
-            const quinaTernoElement = document.getElementById('quinaTernoAnalise');
-            const quinaQuadraElement = document.getElementById('quinaQuadraAnalise');
-            const quinaQuinaElement = document.getElementById('quinaQuinaAnalise');
-
-            premios.duque = quinaDuqueElement ? (parseBrazilianNumber(quinaDuqueElement.value) || PRIZE_DEFAULTS.quina.duque) : PRIZE_DEFAULTS.quina.duque;
-            premios.terno = quinaTernoElement ? (parseBrazilianNumber(quinaTernoElement.value) || PRIZE_DEFAULTS.quina.terno) : PRIZE_DEFAULTS.quina.terno;
-            premios.quadra = quinaQuadraElement ? (parseBrazilianNumber(quinaQuadraElement.value) || PRIZE_DEFAULTS.quina.quadra) : PRIZE_DEFAULTS.quina.quadra;
-            premios.quina = quinaQuinaElement ? (parseBrazilianNumber(quinaQuinaElement.value) || PRIZE_DEFAULTS.quina.quina) : PRIZE_DEFAULTS.quina.quina;
-
-        } else if (tipoJogo === 'lotofacil') {
-            const lotofacilOnzeElement = document.getElementById('lotofacilOnzeAnalise');
-            const lotofacilDozeElement = document.getElementById('lotofacilDozeAnalise');
-            const lotofacilTrezeElement = document.getElementById('lotofacilTrezeAnalise');
-            const lotofacilQuatorzeElement = document.getElementById('lotofacilQuatorzeAnalise');
-            const lotofacilQuinzeElement = document.getElementById('lotofacilQuinzeAnalise');
-
-            premios.onze = lotofacilOnzeElement ? (parseBrazilianNumber(lotofacilOnzeElement.value) || PRIZE_DEFAULTS.lotofacil.onze) : PRIZE_DEFAULTS.lotofacil.onze;
-            premios.doze = lotofacilDozeElement ? (parseBrazilianNumber(lotofacilDozeElement.value) || PRIZE_DEFAULTS.lotofacil.doze) : PRIZE_DEFAULTS.lotofacil.doze;
-            premios.treze = lotofacilTrezeElement ? (parseBrazilianNumber(lotofacilTrezeElement.value) || PRIZE_DEFAULTS.lotofacil.treze) : PRIZE_DEFAULTS.lotofacil.treze;
-            premios.quatorze = lotofacilQuatorzeElement ? (parseBrazilianNumber(lotofacilQuatorzeElement.value) || PRIZE_DEFAULTS.lotofacil.quatorze) : PRIZE_DEFAULTS.lotofacil.quatorze;
-            premios.quinze = lotofacilQuinzeElement ? (parseBrazilianNumber(lotofacilQuinzeElement.value) || PRIZE_DEFAULTS.lotofacil.quinze) : PRIZE_DEFAULTS.lotofacil.quinze;
-
-        } else { // megasena
-            const megasenaQuadraElement = document.getElementById('megasenaQuadraAnalise');
-            const megasenaQuinaElement = document.getElementById('megasenaQuinaAnalise');
-            const megasenaSenaElement = document.getElementById('megasenaSenaAnalise');
-
-            premios.quadra = megasenaQuadraElement ? (parseBrazilianNumber(megasenaQuadraElement.value) || PRIZE_DEFAULTS.megasena.quadra) : PRIZE_DEFAULTS.megasena.quadra;
-            premios.quina = megasenaQuinaElement ? (parseBrazilianNumber(megasenaQuinaElement.value) || PRIZE_DEFAULTS.megasena.quina) : PRIZE_DEFAULTS.megasena.quina;
-            premios.sena = megasenaSenaElement ? (parseBrazilianNumber(megasenaSenaElement.value) || PRIZE_DEFAULTS.megasena.sena) : PRIZE_DEFAULTS.megasena.sena;
-        }
+        gameConfig.prizeTiers.forEach(tier => {
+            const inputEl = document.getElementById(tier.inputId);
+            // Use default from constants if input is not found or empty
+            premios[tier.key] = inputEl 
+                ? (parseBrazilianNumber(inputEl.value) || PRIZE_DEFAULTS[tipoJogo][tier.key]) 
+                : PRIZE_DEFAULTS[tipoJogo][tier.key];
+        });
 
         // Processar cada arquivo
         const datasets = [];
+        const distributionDatasets = []; // Para o gráfico de distribuição
         const colors = [
             '#2563eb', '#059669', '#f59e0b', '#dc2626', '#7c3aed', '#06b6d4'
         ];
@@ -641,7 +749,8 @@ async function generateResultCharts() {
 
             let jogos;
             if (arquivo.gameData.type === 'external') {
-                jogos = await readGamesFromFile(arquivo.gameData.file, gameConfig.expectedNumbers, gameConfig.maxBalls);
+                const fileInfo = await validateAndGetFileInfo(arquivo.gameData.file);
+                jogos = fileInfo.games;
             } else if (arquivo.gameData.type === 'generated' && arquivo.gameData.allGames) {
                 // The games are already in memory, just need to ensure they are valid for the current context
                 jogos = arquivo.gameData.allGames
@@ -665,11 +774,11 @@ async function generateResultCharts() {
             const custoTotalFormatado = formatCurrency(custoTotalArquivo);
             const newLabel = `${arquivo.name} (Custo: ${custoTotalFormatado})`;
 
-            const premiosPorSorteio = calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios);
+            // Dados para o primeiro gráfico (prêmios ordenados), considerando a opção de rebaixamento
+            const premiosPorSorteio = calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios, downgradeMaxPrize);
             const dadosOrdenados = premiosPorSorteio
                 .map((premio, index) => ({ premio, sorteio: index + 1 }))
                 .sort((a, b) => a.premio - b.premio);
-
             datasets.push({
                 label: newLabel,
                 data: dadosOrdenados.map(d => d.premio),
@@ -680,6 +789,25 @@ async function generateResultCharts() {
                 pointRadius: 2,
                 pointHoverRadius: 5
             });
+
+            // Dados para o segundo gráfico (distribuição de prêmios)
+            const prizeDistribution = premiosPorSorteio.reduce((acc, prize) => {
+                acc[prize] = (acc[prize] || 0) + 1;
+                return acc;
+            }, {});
+
+            const distributionData = Object.entries(prizeDistribution).map(([prize, count]) => ({
+                x: Number(prize),
+                y: count
+            })).sort((a, b) => a.x - b.x);
+
+            distributionDatasets.push({
+                label: newLabel,
+                data: distributionData,
+                borderColor: colors[i % colors.length],
+                backgroundColor: colors[i % colors.length] + '20',
+                fill: false
+            });
         }
 
         if (datasets.length === 0) {
@@ -687,6 +815,7 @@ async function generateResultCharts() {
         }
 
         // Criar labels e canvas
+        // Gráfico 1: Prêmios Ordenados
         const maxLength = Math.max(...datasets.map(d => d.data.length));
         const labels = Array.from({ length: maxLength }, (_, i) => i + 1);
         const axisConfig = getAxisConfig();
@@ -702,16 +831,32 @@ async function generateResultCharts() {
         canvas.id = 'resultsChart';
         canvas.style.maxHeight = '500px';
         chartContainer.appendChild(canvas);
-        container.appendChild(chartContainer);
+        if (orderedContainer) orderedContainer.appendChild(chartContainer);
 
         // Mostrar seção inteira, container e criar gráfico
         if (section) section.style.display = 'block';
-        container.style.display = 'block';
         createChart('resultsChart', datasets, labels, 
             `Prêmios por Sorteio (Ordenados por Valor) - ${tipoJogo.toUpperCase()}`, axisConfig);
 
+        // Gráfico 2: Distribuição de Prêmios
+        const distAxisConfig = getDistAxisConfig();
+        const distChartContainer = document.createElement('div');
+        distChartContainer.style.width = '100%';
+        distChartContainer.style.height = '500px';
+        distChartContainer.style.position = 'relative';
+        distChartContainer.style.marginTop = '40px';
+
+        const distCanvas = document.createElement('canvas');
+        distCanvas.id = 'distributionChart';
+        distCanvas.style.maxHeight = '500px';
+        distChartContainer.appendChild(distCanvas);
+        if (distContainer) distContainer.appendChild(distChartContainer);
+
+        createPrizeDistributionChart('distributionChart', distributionDatasets, `Distribuição de Prêmios por Sorteio - ${tipoJogo.toUpperCase()}`, distAxisConfig);
+
         // Preencher sugestões de valores mínimos e máximos
         populateAxisSuggestions();
+        populateDistAxisSuggestions();
 
         // Show print button
         if (printBtn) {
@@ -732,4 +877,4 @@ async function generateResultCharts() {
     }
 }
 
-export { generateResultCharts, updateChartAxes, printChartToPDF, resetAxisSliders };
+export { generateResultCharts, updateChartAxes, printChartToPDF, resetAxisSliders, updateDistChartAxes, resetDistAxisSliders };

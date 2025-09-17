@@ -21,16 +21,20 @@ const VOLANTE_LAYOUTS = {
              * @param {object} config - O objeto de configuração de impressão.
              * @returns {{x: number, y: number}} As coordenadas em pontos.
              */
-            const cellWidthPoints = mmToPoints(config.cellWidthMm);
-            const cellHeightPoints = mmToPoints(config.cellHeightMm);
-            const gameHeightPoints = this.NUM_ROWS_LAYOUT * cellHeightPoints;
+            const markWidthPoints = mmToPoints(config.markWidthMm);
+            const markHeightPoints = mmToPoints(config.markHeightMm);
+            const horizontalSpacingPoints = mmToPoints(config.horizontalSpacingMm);
+            const verticalSpacingPoints = mmToPoints(config.verticalSpacingMm);
+            const totalCellWidth = markWidthPoints + horizontalSpacingPoints;
+            const totalCellHeight = markHeightPoints + verticalSpacingPoints;
+            const gameHeightPoints = this.NUM_ROWS_LAYOUT * totalCellHeight;
             const distanceBetweenGamesPoints = mmToPoints(config.distanceBetweenGamesMm);
             const gameGridBaseY = mmToPoints(config.firstGameYFromTopMm) +
                 (gameIndexOnPage * (gameHeightPoints + distanceBetweenGamesPoints));
             const col = (number - 1) % this.NUM_COLS_LAYOUT;
             const row = Math.floor((number - 1) / this.NUM_COLS_LAYOUT);
-            const x = mmToPoints(config.startXMm) + col * cellWidthPoints;
-            const y = gameGridBaseY + row * cellHeightPoints;
+            const x = mmToPoints(config.startXMm) + col * totalCellWidth;
+            const y = gameGridBaseY + row * totalCellHeight;
             return { x, y };
         }
     },
@@ -48,16 +52,20 @@ const VOLANTE_LAYOUTS = {
              * @param {object} config - O objeto de configuração de impressão.
              * @returns {{x: number, y: number}} As coordenadas em pontos.
              */
-            const cellWidthPoints = mmToPoints(config.cellWidthMm);
-            const cellHeightPoints = mmToPoints(config.cellHeightMm);
-            const gameHeightPoints = this.NUM_ROWS_LAYOUT * cellHeightPoints;
+            const markWidthPoints = mmToPoints(config.markWidthMm);
+            const markHeightPoints = mmToPoints(config.markHeightMm);
+            const horizontalSpacingPoints = mmToPoints(config.horizontalSpacingMm);
+            const verticalSpacingPoints = mmToPoints(config.verticalSpacingMm);
+            const totalCellWidth = markWidthPoints + horizontalSpacingPoints;
+            const totalCellHeight = markHeightPoints + verticalSpacingPoints;
+            const gameHeightPoints = this.NUM_ROWS_LAYOUT * totalCellHeight;
             const distanceBetweenGamesPoints = mmToPoints(config.distanceBetweenGamesMm);
             const gameGridBaseY = mmToPoints(config.firstGameYFromTopMm) +
                 (gameIndexOnPage * (gameHeightPoints + distanceBetweenGamesPoints));
             const col = (number - 1) % this.NUM_COLS_LAYOUT;
             const row = Math.floor((number - 1) / this.NUM_COLS_LAYOUT);
-            const x = mmToPoints(config.startXMm) + col * cellWidthPoints;
-            const y = gameGridBaseY + row * cellHeightPoints;
+            const x = mmToPoints(config.startXMm) + col * totalCellWidth;
+            const y = gameGridBaseY + row * totalCellHeight;
             return { x, y };
         }
     },
@@ -75,9 +83,13 @@ const VOLANTE_LAYOUTS = {
              * @param {object} config - O objeto de configuração de impressão.
              * @returns {{x: number, y: number}} As coordenadas em pontos.
              */
-            const cellWidthPoints = mmToPoints(config.cellWidthMm);
-            const cellHeightPoints = mmToPoints(config.cellHeightMm);
-            const gameHeightPoints = this.NUM_ROWS_LAYOUT * cellHeightPoints;
+            const markWidthPoints = mmToPoints(config.markWidthMm);
+            const markHeightPoints = mmToPoints(config.markHeightMm);
+            const horizontalSpacingPoints = mmToPoints(config.horizontalSpacingMm);
+            const verticalSpacingPoints = mmToPoints(config.verticalSpacingMm);
+            const totalCellWidth = markWidthPoints + horizontalSpacingPoints;
+            const totalCellHeight = markHeightPoints + verticalSpacingPoints;
+            const gameHeightPoints = this.NUM_ROWS_LAYOUT * totalCellHeight;
             const distanceBetweenGamesPoints = mmToPoints(config.distanceBetweenGamesMm);
             const gameGridBaseY = mmToPoints(config.firstGameYFromTopMm) +
                 (gameIndexOnPage * (gameHeightPoints + distanceBetweenGamesPoints));
@@ -85,8 +97,8 @@ const VOLANTE_LAYOUTS = {
             // Linha: (number-1)%NUM_ROWS_LAYOUT [de cima para baixo]
             const col = this.NUM_COLS_LAYOUT - 1 - Math.floor((number - 1) / this.NUM_ROWS_LAYOUT); // direita para esquerda
             const row = (number - 1) % this.NUM_ROWS_LAYOUT; // cima para baixo
-            const x = mmToPoints(config.startXMm) + col * cellWidthPoints;
-            const y = gameGridBaseY + row * cellHeightPoints;
+            const x = mmToPoints(config.startXMm) + col * totalCellWidth;
+            const y = gameGridBaseY + row * totalCellHeight;
             return { x, y };
         }
     }
@@ -123,12 +135,11 @@ function mmToPoints(mm) {
 /**
  * Lê um arquivo Excel contendo os jogos para impressão.
  * @param {File} file - O arquivo Excel a ser lido.
- * @param {boolean} readCotasFromExcel - Se verdadeiro, a primeira coluna do Excel é lida como o número de cotas.
  * @param {number} maxBallsOnTicket - O número máximo de dezenas permitido no volante (ex: 80 para Quina).
- * @returns {Promise<{jogos: number[][], cotas: (number|null)[], dezenasPorJogo: number[]}>} Um objeto contendo
- * os jogos, as cotas correspondentes e a quantidade de dezenas de cada jogo.
+ * @returns {Promise<{jogos: number[][], dezenasPorJogo: number[]}>} Um objeto contendo
+ * os jogos e a quantidade de dezenas de cada jogo.
  */
-async function readExcelForPdf(file, readCotasFromExcel, maxBallsOnTicket) {
+async function readExcelForPdf(file, maxBallsOnTicket) {
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data, { type: 'array' });
     const firstSheetName = workbook.SheetNames[0];
@@ -136,23 +147,13 @@ async function readExcelForPdf(file, readCotasFromExcel, maxBallsOnTicket) {
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
 
     const jogos = [];
-    const cotas = [];
     const dezenasPorJogo = [];
 
     jsonData.forEach(row => {
         if (!row || row.length === 0) return; // Skip empty rows
 
-        let cota = null;
         let gameNumbers = [];
         let startIndex = 0;
-
-        if (readCotasFromExcel) {
-            const firstCell = row[0];
-            if (firstCell !== null && !isNaN(Number(firstCell))) {
-                cota = parseInt(Number(firstCell), 10);
-            }
-            startIndex = 1;
-        }
 
         gameNumbers = row.slice(startIndex)
             .filter(num => num !== null && !isNaN(Number(num)) && Number.isInteger(Number(num)) && Number(num) >= 1 && Number(num) <= maxBallsOnTicket)
@@ -160,12 +161,11 @@ async function readExcelForPdf(file, readCotasFromExcel, maxBallsOnTicket) {
 
         if (gameNumbers.length > 0) {
             jogos.push(gameNumbers.sort((a, b) => a - b));
-            cotas.push(cota); // Will be null if not read or not a number
             dezenasPorJogo.push(gameNumbers.length);
         }
     });
 
-    return { jogos, cotas, dezenasPorJogo };
+    return { jogos, dezenasPorJogo };
 }
 
 /**
@@ -177,10 +177,11 @@ async function readExcelForPdf(file, readCotasFromExcel, maxBallsOnTicket) {
  */
 function drawCardOnPdf(doc, numerosDoJogo, gameIndexOnPage, config) {
     const layout = getVolanteLayout();
-    const cellWidthPoints = mmToPoints(config.cellWidthMm);
-    const cellHeightPoints = mmToPoints(config.cellHeightMm);
-    const borderWidthPoints = mmToPoints(config.borderWidthMm); // Borda interna X
-    const borderHeightPoints = mmToPoints(config.borderHeightMm); // Borda interna Y
+    const markWidthPoints = mmToPoints(config.markWidthMm);
+    const markHeightPoints = mmToPoints(config.markHeightMm);
+
+    const globalOffsetXPoints = mmToPoints(config.globalOffsetX || 0);
+    const globalOffsetYPoints = mmToPoints(config.globalOffsetY || 0);
 
     numerosDoJogo.forEach(numero => {
         const { x, y } = layout.getNumberPosition(numero, gameIndexOnPage, config);
@@ -188,10 +189,10 @@ function drawCardOnPdf(doc, numerosDoJogo, gameIndexOnPage, config) {
         // Desenha o retângulo preto que preenche a célula do número
         doc.setFillColor(0, 0, 0);
         doc.rect(
-            x + borderWidthPoints,
-            y + borderHeightPoints,
-            cellWidthPoints - (2 * borderWidthPoints),
-            cellHeightPoints - (2 * borderHeightPoints),
+            x + globalOffsetXPoints,
+            y + globalOffsetYPoints,
+            markWidthPoints,
+            markHeightPoints,
             'F'
         );
     });
@@ -204,7 +205,6 @@ function drawCardOnPdf(doc, numerosDoJogo, gameIndexOnPage, config) {
  * @param {object} config - Configurações de impressão.
  */
 function drawDezenasJogadasMark(doc, dezenasPorJogo, config) {
-    const layout = getVolanteLayout();
     // Definições de início e máximo para cada tipo de jogo
     const gameType = getSelectedGameType();
     let minDezenas, maxDezenas, yOffsetExtra = 0;
@@ -229,33 +229,28 @@ function drawDezenasJogadasMark(doc, dezenasPorJogo, config) {
 
     if (dezenasPorJogo < minDezenas || dezenasPorJogo > maxDezenas) return;
 
-    const gameBaseYFromTopPoints = mmToPoints(config.firstGameYFromTopMm);
-    const cellWidthPoints = mmToPoints(config.cellWidthMm);
-    const cellHeightPoints = mmToPoints(config.cellHeightMm);
-    const gameHeightPoints = layout.NUM_ROWS_LAYOUT * cellHeightPoints;
-    const distanceBetweenGamesPoints = mmToPoints(config.distanceBetweenGamesMm);
-    const borderWidthPoints = mmToPoints(config.borderWidthMm);
-    const borderHeightPoints = mmToPoints(config.borderHeightMm);
+    const startXPoints = mmToPoints(config.dezenasMarkXPosMm);
+    const startYPoints = mmToPoints(config.dezenasMarkYPosMm);
 
-    // Y do topo da área de marcação de "dezenas jogadas"
-    let markAreaTopY = gameBaseYFromTopPoints +
-        (layout.CARDS_PER_PAGE_PDF * gameHeightPoints) +
-        ((layout.CARDS_PER_PAGE_PDF - 1) * distanceBetweenGamesPoints) +
-        mmToPoints(config.afterGameOffsetMm);
-
-    // Ajuste o Y para cada tipo de jogo
-    markAreaTopY += yOffsetExtra;
+    // Reutiliza as dimensões e espaçamentos da grade principal para consistência
+    const cellWidthPoints = mmToPoints(config.dezenasMarkCellWidthMm);
+    const cellHeightPoints = mmToPoints(config.dezenasMarkCellHeightMm);
+    const horizontalSpacingPoints = mmToPoints(config.dezenasMarkHorizontalSpacingMm);
+    const totalCellWidth = cellWidthPoints + horizontalSpacingPoints;
 
     // A coluna é 0-indexed (ex: quina: 5 dezenas -> coluna 0, megasena: 6 dezenas -> coluna 0, lotofacil: 15 dezenas -> coluna 0)
     const colunaDezenaIndex = dezenasPorJogo - minDezenas;
-    const pdfGamesNumbersXOffsetMm = mmToPoints(config.startXMm) + colunaDezenaIndex * cellWidthPoints;
+    const xPos = startXPoints + (colunaDezenaIndex * totalCellWidth);
+
+    const globalOffsetXPoints = mmToPoints(config.globalOffsetX || 0);
+    const globalOffsetYPoints = mmToPoints(config.globalOffsetY || 0);
 
     doc.setFillColor(0, 0, 0); // Marcação preta
     doc.rect(
-        pdfGamesNumbersXOffsetMm + borderWidthPoints,
-        markAreaTopY + borderHeightPoints,
-        cellWidthPoints - (2 * borderWidthPoints),
-        cellHeightPoints - (2 * borderHeightPoints),
+        xPos + globalOffsetXPoints,
+        startYPoints + globalOffsetYPoints,
+        cellWidthPoints,
+        cellHeightPoints,
         'F'
     );
 }
@@ -267,41 +262,39 @@ function drawDezenasJogadasMark(doc, dezenasPorJogo, config) {
  * @param {object} config - Configurações de impressão.
  */
 function drawBolaoMark(doc, cotaValue, config) {
-    const layout = getVolanteLayout();
     if (cotaValue < 1 || cotaValue > 99) return; // Limite comum para cotas
 
-    const gameBaseYFromTopPoints = mmToPoints(config.firstGameYFromTopMm);
-    const cellWidthPoints = mmToPoints(6.5); // Ajuste para o novo tamanho da célula
-    const cellHeightPoints = mmToPoints(3);
-    const gameHeightPoints = layout.NUM_ROWS_LAYOUT * cellHeightPoints;
-    const distanceBetweenGamesPoints = mmToPoints(config.distanceBetweenGamesMm);
-    const borderWidthPoints = mmToPoints(1.1);
-    const borderHeightPoints = mmToPoints(0.3); // Ajuste para a borda interna Y
-    const gapBetweenDezenaUnidadeMm = 0.7; // Equivalente aos 2 pontos do Python
+    const startXPoints = mmToPoints(config.bolaoMarkXPosMm);
+    const startYPoints = mmToPoints(config.bolaoMarkYPosMm);
+    const cellWidthPoints = mmToPoints(config.bolaoCellWidthMm);
+    const cellHeightPoints = mmToPoints(config.bolaoCellHeightMm);
+    const horizontalSpacingPoints = mmToPoints(config.bolaoHorizontalSpacingMm);
+    const verticalSpacingPoints = mmToPoints(config.bolaoVerticalSpacingMm);
+    const totalCellWidth = cellWidthPoints + horizontalSpacingPoints;
+    const totalCellHeight = cellHeightPoints + verticalSpacingPoints;
 
     // Y do topo da área de marcação do bolão (para a dezena)
-    const posYDezena = gameBaseYFromTopPoints +
-                       (layout.CARDS_PER_PAGE_PDF * gameHeightPoints) +
-                       ((layout.CARDS_PER_PAGE_PDF - 4) * distanceBetweenGamesPoints) +
-                       mmToPoints(config.bolaoOffsetMm);
-
+    const posYDezena = startYPoints;
     // Y do topo da área de marcação do bolão (para a unidade)
-    const posYUnidade = posYDezena + cellHeightPoints + mmToPoints(gapBetweenDezenaUnidadeMm);
+    const posYUnidade = startYPoints + totalCellHeight;
 
     const dezena = Math.floor(cotaValue / 10); // 0 para cotas < 10, 1 para 10-19, ..., 5 para 50
     const unidade = cotaValue % 10;        // 0-9
+
+    const globalOffsetXPoints = mmToPoints(config.globalOffsetX || 0);
+    const globalOffsetYPoints = mmToPoints(config.globalOffsetY || 0);
 
     // Marcar dezena (se cotaValue >= 10)
     // As colunas para dezenas (10, 20, 30, 40, 50) são geralmente indexadas de 0 a 4 ou 1 a 5.
     // Python: (dezena - 1) * CELL_WIDTH. Se dezena=1 (para 10), col_idx=0. Se dezena=5 (para 50), col_idx=4.
     if (dezena > 0) {
-        const pdfGamesNumbersXOffsetMmDezenaMark = mmToPoints(config.startXMm+2) + (dezena - 1) * cellWidthPoints;
+        const xPosDezena = startXPoints + (dezena - 1) * totalCellWidth;
         doc.setFillColor(0, 0, 0);
         doc.rect(
-            pdfGamesNumbersXOffsetMmDezenaMark + borderWidthPoints,
-            posYDezena + borderHeightPoints,
-            cellWidthPoints - (2 * borderWidthPoints),
-            cellHeightPoints - (2 * borderHeightPoints),
+            xPosDezena + globalOffsetXPoints,
+            posYDezena + globalOffsetYPoints,
+            cellWidthPoints,
+            cellHeightPoints,
             'F'
         );
     }
@@ -309,13 +302,14 @@ function drawBolaoMark(doc, cotaValue, config) {
     // Marcar unidade (sempre, para cotas 1-9, ou 0 para 10, 20, etc.)
     // As colunas para unidades (0-9) são geralmente indexadas de 0 a 9.
     // Python: unidade * CELL_WIDTH. Se unidade=0, col_idx=0. Se unidade=9, col_idx=9.
-    const pdfGamesNumbersXOffsetMmUnidadeMark = mmToPoints(config.startXMm) + unidade * cellWidthPoints;
+
+    const xPosUnidade = startXPoints + unidade * totalCellWidth;
     doc.setFillColor(0, 0, 0);
     doc.rect(
-        pdfGamesNumbersXOffsetMmUnidadeMark + borderWidthPoints,
-        posYUnidade + borderHeightPoints,
-        cellWidthPoints - (2 * borderWidthPoints),
-        cellHeightPoints - (2 * borderHeightPoints),
+        xPosUnidade + globalOffsetXPoints,
+        posYUnidade + globalOffsetYPoints,
+        cellWidthPoints,
+        cellHeightPoints,
         'F'
     );
 }
@@ -327,13 +321,16 @@ function drawBolaoMark(doc, cotaValue, config) {
  * @param {object} config - Configurações de impressão.
  */
 function drawPageNumberOnPdf(doc, pageNumber, config) {
-    const pdfGamesNumbersXOffsetMm = mmToPoints(config.startXMm + config.pageNumberXOffsetMm);
-    const posY = mmToPoints(config.pageHeightMm - config.pageNumberYOffsetMm);
+    const posX = mmToPoints(config.pageNumberXPosMm);
+    const posY = mmToPoints(config.pageNumberYPosMm);
 
-    doc.setFont("Verdana-ExtraBold");
-    doc.setFontSize(18);
+    const globalOffsetXPoints = mmToPoints(config.globalOffsetX || 0);
+    const globalOffsetYPoints = mmToPoints(config.globalOffsetY || 0);
+
+    doc.setFontSize(config.pageNumberFontSize);
+    doc.setFont("helvetica", "bold");
     doc.setTextColor(0, 0, 0); // Preto
-    doc.text(String(pageNumber), pdfGamesNumbersXOffsetMm, posY);
+    doc.text(String(pageNumber), posX + globalOffsetXPoints, posY + globalOffsetYPoints, { baseline: 'top' });
 }
 
 /**
@@ -341,21 +338,23 @@ function drawPageNumberOnPdf(doc, pageNumber, config) {
  * @param {jsPDF} doc - A instância do jsPDF. 
  * @param {number[][]} gamesOnPage - Array de jogos (cada jogo é um array de números) na página atual.
  * @param {object} config - Configurações de impressão.
- * @param {number} pdfPageHeightPoints - Altura da página PDF em pontos.
  */
-function drawGamesNumbersOnPdf(doc, gamesOnPage, config, pdfPageHeightPoints) {
-    const startXPoints = mmToPoints(config.startXMm + config.gamesNumbersXOffsetMm);
-    const startYPoints = pdfPageHeightPoints - mmToPoints(config.gamesNumbersYOffsetMm);
+function drawGamesNumbersOnPdf(doc, gamesOnPage, config) {
+    const startXPoints = mmToPoints(config.gamesNumbersXPosMm);
+    const startYPoints = mmToPoints(config.gamesNumbersYPosMm);
     const lineSpacingPoints = mmToPoints(config.gamesNumbersLineSpacingMm);
 
-    doc.setFont("Verdana-ExtraBold");
-    doc.setFontSize(10); // 10pt font size (as in Python)
+    const globalOffsetXPoints = mmToPoints(config.globalOffsetX || 0);
+    const globalOffsetYPoints = mmToPoints(config.globalOffsetY || 0);
+
+    doc.setFontSize(config.gamesNumbersFontSize);
+    doc.setFont("helvetica", "bold");
     doc.setTextColor(0, 0, 0); // Preto
 
     gamesOnPage.forEach((jogo, index) => {
         const jogoNumeros = jogo.map(num => String(num).padStart(2, '0')).join('.');
         const posY = startYPoints + (index * lineSpacingPoints);
-        doc.text(jogoNumeros, startXPoints, posY);
+        doc.text(jogoNumeros, startXPoints + globalOffsetXPoints, posY + globalOffsetYPoints, { baseline: 'top' });
     });
 }
 
@@ -394,36 +393,53 @@ async function generateVolantePDF() {
             gameFile: document.getElementById('pdfGameFile').files[0],
             pageWidthMm: parseBrazilianNumber(document.getElementById('pdfPageWidthMm').value),
             pageHeightMm: parseBrazilianNumber(document.getElementById('pdfPageHeightMm').value),
-            marginMm: parseBrazilianNumber(document.getElementById('pdfMarginMm').value),
+            globalOffsetX: parseBrazilianNumber(document.getElementById('pdfGlobalOffsetX').value) || 0,
+            globalOffsetY: parseBrazilianNumber(document.getElementById('pdfGlobalOffsetY').value) || 0,
             startXMm: parseBrazilianNumber(document.getElementById('pdfStartXMm').value),
             firstGameYFromTopMm: parseBrazilianNumber(document.getElementById('pdfFirstGameYFromTopMm').value),
-            cellWidthMm: parseBrazilianNumber(document.getElementById('pdfCellWidthMm').value),
-            cellHeightMm: parseBrazilianNumber(document.getElementById('pdfCellHeightMm').value),
+            markWidthMm: parseBrazilianNumber(document.getElementById('pdfMarkWidthMm').value),
+            markHeightMm: parseBrazilianNumber(document.getElementById('pdfMarkHeightMm').value),
+            horizontalSpacingMm: parseBrazilianNumber(document.getElementById('pdfHorizontalSpacingMm').value),
+            verticalSpacingMm: parseBrazilianNumber(document.getElementById('pdfVerticalSpacingMm').value),
             distanceBetweenGamesMm: parseBrazilianNumber(document.getElementById('pdfDistanceBetweenGamesMm').value),
-            borderWidthMm: parseBrazilianNumber(document.getElementById('pdfBorderWidthMm').value),
-            borderHeightMm: parseBrazilianNumber(document.getElementById('pdfBorderHeightMm').value),
-            afterGameOffsetMm: parseBrazilianNumber(document.getElementById('pdfAfterGameOffsetMm').value),
-            bolaoOffsetMm: parseBrazilianNumber(document.getElementById('pdfBolaoOffsetMm').value),
-            defaultCotas: parseInt(document.getElementById('pdfDefaultCotas').value, 10),
-            readCotasFromExcel: document.getElementById('pdfReadCotasFromExcel').checked,
+            
+            // Marcações Especiais
+            dezenasMarkXPosMm: parseBrazilianNumber(document.getElementById('pdfDezenasMarkXPosMm').value),
+            dezenasMarkYPosMm: parseBrazilianNumber(document.getElementById('pdfDezenasMarkYPosMm').value),
+            dezenasMarkCellWidthMm: parseBrazilianNumber(document.getElementById('pdfDezenasMarkCellWidthMm').value),
+            dezenasMarkCellHeightMm: parseBrazilianNumber(document.getElementById('pdfDezenasMarkCellHeightMm').value),
+            dezenasMarkHorizontalSpacingMm: parseBrazilianNumber(document.getElementById('pdfDezenasMarkHorizontalSpacingMm').value),
+
+            bolaoMarkXPosMm: parseBrazilianNumber(document.getElementById('pdfBolaoMarkXPosMm').value),
+            bolaoMarkYPosMm: parseBrazilianNumber(document.getElementById('pdfBolaoMarkYPosMm').value),
+            bolaoCellWidthMm: parseBrazilianNumber(document.getElementById('pdfBolaoCellWidthMm').value),
+            bolaoCellHeightMm: parseBrazilianNumber(document.getElementById('pdfBolaoCellHeightMm').value),
+            bolaoHorizontalSpacingMm: parseBrazilianNumber(document.getElementById('pdfBolaoHorizontalSpacingMm').value),
+            bolaoVerticalSpacingMm: parseBrazilianNumber(document.getElementById('pdfBolaoVerticalSpacingMm').value),
+            cotaValue: parseInt(document.getElementById('pdfCotas').value, 10) || 0,
+
+            // Avançadas
             printBackgroundImage: document.getElementById('pdfPrintBackgroundImage').checked,
             backgroundImageFile: document.getElementById('pdfBackgroundImageFile').files[0],
-
-            // Novos campos para posicionamento
-            pageNumberXOffsetMm: parseBrazilianNumber(document.getElementById('pdfPageNumberXOffsetMm').value),
-            pageNumberYOffsetMm: parseBrazilianNumber(document.getElementById('pdfPageNumberYOffsetMm').value),
-            gamesNumbersXOffsetMm: parseBrazilianNumber(document.getElementById('pdfGamesNumbersXOffsetMm').value),
-            gamesNumbersYOffsetMm: parseBrazilianNumber(document.getElementById('pdfGamesNumbersYOffsetMm').value),
+            pageNumberXPosMm: parseBrazilianNumber(document.getElementById('pdfPageNumberXPosMm').value),
+            pageNumberYPosMm: parseBrazilianNumber(document.getElementById('pdfPageNumberYPosMm').value),
+            pageNumberFontSize: parseBrazilianNumber(document.getElementById('pdfPageNumberFontSize').value) || 18,
+            gamesNumbersXPosMm: parseBrazilianNumber(document.getElementById('pdfGamesNumbersXPosMm').value),
+            gamesNumbersYPosMm: parseBrazilianNumber(document.getElementById('pdfGamesNumbersYPosMm').value),
             gamesNumbersLineSpacingMm: parseBrazilianNumber(document.getElementById('pdfGamesNumbersLineSpacingMm').value),
+            gamesNumbersFontSize: parseBrazilianNumber(document.getElementById('pdfGamesNumbersFontSize').value) || 10,
+            showLogoMarginLines: document.getElementById('pdfShowLogoMarginLines').checked,
+            showGridLines: document.getElementById('pdfShowGridLines').checked,
+            gridLineColSpacing: parseInt(document.getElementById('pdfGridLineColSpacing').value, 10) || 1,
+            gridLineRowSpacing: parseInt(document.getElementById('pdfGridLineRowSpacing').value, 10) || 1,
         };
 
         if (!pdfConfig.gameFile) {
             throw new Error('Por favor, selecione o arquivo Excel com os jogos.');
         }
         // Validação básica para outros campos numéricos críticos
-        if (isNaN(pdfConfig.pageWidthMm) || isNaN(pdfConfig.pageHeightMm) || isNaN(pdfConfig.marginMm) ||
-            isNaN(pdfConfig.startXMm) || isNaN(pdfConfig.firstGameYFromTopMm) || isNaN(pdfConfig.cellWidthMm) ||
-            isNaN(pdfConfig.cellHeightMm) || isNaN(pdfConfig.defaultCotas)) {
+        if (isNaN(pdfConfig.pageWidthMm) || isNaN(pdfConfig.pageHeightMm) || isNaN(pdfConfig.startXMm) || isNaN(pdfConfig.firstGameYFromTopMm) || isNaN(pdfConfig.markWidthMm) ||
+            isNaN(pdfConfig.markHeightMm)) {
             throw new Error('Verifique as configurações de dimensão e posicionamento. Valores numéricos são esperados.');
         }
         if (pdfConfig.printBackgroundImage && !pdfConfig.backgroundImageFile) {
@@ -433,28 +449,24 @@ async function generateVolantePDF() {
 
         statusEl.textContent = 'Lendo arquivo Excel...';
         const layout = getVolanteLayout();
-        const { jogos: jogosParaPdf, cotas: cotasParaPdf, dezenasPorJogo: dezenasPorJogoArray } =
-            await readExcelForPdf(pdfConfig.gameFile, pdfConfig.readCotasFromExcel, layout.MAX_BALLS);
+        const { jogos: jogosParaPdf, dezenasPorJogo: dezenasPorJogoArray } =
+            await readExcelForPdf(pdfConfig.gameFile, layout.MAX_BALLS);
 
         if (!jogosParaPdf || jogosParaPdf.length === 0) {
             throw new Error('Nenhum jogo válido encontrado no arquivo Excel.');
         }
 
         // Cria o documento PDF com as dimensões da página especificadas.
-        // A interpretação aqui é que as dimensões da página no jsPDF devem ser
-        // o tamanho físico do volante menos uma margem, para alinhar com o comportamento
-        // de um script Python de referência.
         const pdfDoc = new jsPDF({
             orientation: 'portrait',
             unit: 'pt',
             format: [
-                mmToPoints(pdfConfig.pageWidthMm - pdfConfig.marginMm), // Largura da página PDF = Largura física - 1x pdfMarginMm (como no Python)
-                mmToPoints(pdfConfig.pageHeightMm - pdfConfig.marginMm)  // Altura da página PDF = Altura física - 1x pdfMarginMm (como no Python)
+                mmToPoints(pdfConfig.pageWidthMm), // Largura total do volante
+                mmToPoints(pdfConfig.pageHeightMm)  // Altura total do volante
             ]
         });
 
-        const pdfPageWidthPoints = mmToPoints(pdfConfig.pageWidthMm - pdfConfig.marginMm);
-        const pdfPageHeightPoints = mmToPoints(pdfConfig.pageHeightMm - pdfConfig.marginMm);
+        const pdfPageHeightPoints = mmToPoints(pdfConfig.pageHeightMm);
 
         let backgroundImageDataUrl = null;
         if (pdfConfig.printBackgroundImage && pdfConfig.backgroundImageFile) {
@@ -479,19 +491,45 @@ async function generateVolantePDF() {
 
             // Captura informações do primeiro jogo desta página (volante) para usar nas marcações de rodapé
             let firstGameDezenasCountThisPage = 0;
-            let firstGameCotaThisPage = pdfConfig.defaultCotas;
-
-            if (pdfConfig.readCotasFromExcel && gameIndexInAllGames < cotasParaPdf.length && cotasParaPdf[gameIndexInAllGames] !== null) {
-                firstGameCotaThisPage = cotasParaPdf[gameIndexInAllGames];
-            } else {
-                firstGameCotaThisPage = pdfConfig.defaultCotas;
-            }
+            const cotaValue = pdfConfig.cotaValue;
 
             const gamesOnCurrentPage = []; // Coleta os jogos desta página para imprimir os números no rodapé
             
             // Desenhar imagem de fundo, se habilitada
             if (backgroundImageDataUrl) {
-                pdfDoc.addImage(backgroundImageDataUrl, 'JPEG', 0, 0, pdfPageWidthPoints, pdfPageHeightPoints);
+                pdfDoc.addImage(backgroundImageDataUrl, 'JPEG', 0, 0, mmToPoints(pdfConfig.pageWidthMm), pdfPageHeightPoints);
+            }
+
+            // NEW: Draw grid lines for alignment
+            if (pdfConfig.showGridLines) {
+                const colSpacingPt = mmToPoints(pdfConfig.gridLineColSpacing);
+                const rowSpacingPt = mmToPoints(pdfConfig.gridLineRowSpacing);
+                const pageWidthPt = mmToPoints(pdfConfig.pageWidthMm);
+                const pageHeightPt = mmToPoints(pdfConfig.pageHeightMm);
+
+                pdfDoc.setDrawColor(0, 0, 0); // Preto
+                pdfDoc.setLineWidth(0.1);
+
+                // Draw vertical lines
+                for (let x = colSpacingPt; x < pageWidthPt; x += colSpacingPt) {
+                    pdfDoc.line(x, 0, x, pageHeightPt);
+                }
+                // Draw horizontal lines
+                for (let y = rowSpacingPt; y < pageHeightPt; y += rowSpacingPt) {
+                    pdfDoc.line(0, y, pageWidthPt, y);
+                }
+            }
+
+            // Desenha linhas de margem da logo para calibração, se solicitado
+            if (pdfConfig.showLogoMarginLines) {
+                const offsetX = mmToPoints(pdfConfig.globalOffsetX);
+                const offsetY = mmToPoints(pdfConfig.globalOffsetY);
+                const pageWidthPt = mmToPoints(pdfConfig.pageWidthMm);
+                const pageHeightPt = mmToPoints(pdfConfig.pageHeightMm);
+                pdfDoc.setDrawColor(255, 0, 0); // Vermelho
+                pdfDoc.setLineWidth(0.1);
+                pdfDoc.line(offsetX, 0, offsetX, pageHeightPt); // Linha vertical
+                pdfDoc.line(0, offsetY, pageWidthPt, offsetY); // Linha horizontal
             }
 
             // Desenha o número da página (volante)
@@ -518,8 +556,8 @@ async function generateVolantePDF() {
 
             // Desenhar marcações de rodapé para o volante atual
             drawDezenasJogadasMark(pdfDoc, firstGameDezenasCountThisPage, pdfConfig);
-            drawGamesNumbersOnPdf(pdfDoc, gamesOnCurrentPage, pdfConfig, pdfPageHeightPoints); // Draw game numbers at the bottom
-            drawBolaoMark(pdfDoc, firstGameCotaThisPage, pdfConfig);
+            drawGamesNumbersOnPdf(pdfDoc, gamesOnCurrentPage, pdfConfig); // Draw game numbers at the bottom
+            drawBolaoMark(pdfDoc, cotaValue, pdfConfig);
         }
 
         pdfDoc.save('Volantes_Gerados.pdf');
@@ -542,24 +580,41 @@ function coletarConfiguracoesImpressao() {
     return {
         pdfPageWidthMm: document.getElementById('pdfPageWidthMm').value,
         pdfPageHeightMm: document.getElementById('pdfPageHeightMm').value,
-        pdfMarginMm: document.getElementById('pdfMarginMm')?.value || '',
-        pdfGamesNumbersXOffsetMm: document.getElementById('pdfGamesNumbersXOffsetMm').value,
-        // Adicione aqui outros campos conforme necessário
+        pdfGlobalOffsetX: document.getElementById('pdfGlobalOffsetX').value,
+        pdfGlobalOffsetY: document.getElementById('pdfGlobalOffsetY').value,
         pdfStartXMm: document.getElementById('pdfStartXMm').value,
         pdfFirstGameYFromTopMm: document.getElementById('pdfFirstGameYFromTopMm').value,
-        pdfCellWidthMm: document.getElementById('pdfCellWidthMm').value,
-        pdfCellHeightMm: document.getElementById('pdfCellHeightMm').value,
-        pdfBorderWidthMm: document.getElementById('pdfBorderWidthMm').value,
-        pdfBorderHeightMm: document.getElementById('pdfBorderHeightMm').value,
+        pdfMarkWidthMm: document.getElementById('pdfMarkWidthMm').value,
+        pdfMarkHeightMm: document.getElementById('pdfMarkHeightMm').value,
+        pdfHorizontalSpacingMm: document.getElementById('pdfHorizontalSpacingMm').value,
+        pdfVerticalSpacingMm: document.getElementById('pdfVerticalSpacingMm').value,
         pdfDistanceBetweenGamesMm: document.getElementById('pdfDistanceBetweenGamesMm').value,
-        pdfAfterGameOffsetMm: document.getElementById('pdfAfterGameOffsetMm').value,
-        pdfBolaoOffsetMm: document.getElementById('pdfBolaoOffsetMm').value,
-        pdfDefaultCotas: document.getElementById('pdfDefaultCotas').value,
-        pdfPageNumberXOffsetMm: document.getElementById('pdfPageNumberXOffsetMm').value,
-        pdfPageNumberYOffsetMm: document.getElementById('pdfPageNumberYOffsetMm').value,
-        pdfGamesNumbersXOffsetMm: document.getElementById('pdfGamesNumbersXOffsetMm').value,
-        pdfGamesNumbersYOffsetMm: document.getElementById('pdfGamesNumbersYOffsetMm').value,
+
+        pdfDezenasMarkXPosMm: document.getElementById('pdfDezenasMarkXPosMm').value,
+        pdfDezenasMarkYPosMm: document.getElementById('pdfDezenasMarkYPosMm').value,
+        pdfDezenasMarkCellWidthMm: document.getElementById('pdfDezenasMarkCellWidthMm').value,
+        pdfDezenasMarkCellHeightMm: document.getElementById('pdfDezenasMarkCellHeightMm').value,
+        pdfDezenasMarkHorizontalSpacingMm: document.getElementById('pdfDezenasMarkHorizontalSpacingMm').value,
+
+        pdfBolaoMarkXPosMm: document.getElementById('pdfBolaoMarkXPosMm').value,
+        pdfBolaoMarkYPosMm: document.getElementById('pdfBolaoMarkYPosMm').value,
+        pdfBolaoCellWidthMm: document.getElementById('pdfBolaoCellWidthMm').value,
+        pdfBolaoCellHeightMm: document.getElementById('pdfBolaoCellHeightMm').value,
+        pdfBolaoHorizontalSpacingMm: document.getElementById('pdfBolaoHorizontalSpacingMm').value,
+        pdfBolaoVerticalSpacingMm: document.getElementById('pdfBolaoVerticalSpacingMm').value,
+        pdfCotas: document.getElementById('pdfCotas').value,
+
+        pdfPageNumberXPosMm: document.getElementById('pdfPageNumberXPosMm').value,
+        pdfPageNumberYPosMm: document.getElementById('pdfPageNumberYPosMm').value,
+        pdfPageNumberFontSize: document.getElementById('pdfPageNumberFontSize').value,
+        pdfGamesNumbersXPosMm: document.getElementById('pdfGamesNumbersXPosMm').value,
+        pdfGamesNumbersYPosMm: document.getElementById('pdfGamesNumbersYPosMm').value,
         pdfGamesNumbersLineSpacingMm: document.getElementById('pdfGamesNumbersLineSpacingMm').value,
+        pdfGamesNumbersFontSize: document.getElementById('pdfGamesNumbersFontSize').value,
+        pdfShowLogoMarginLines: document.getElementById('pdfShowLogoMarginLines').checked,
+        pdfShowGridLines: document.getElementById('pdfShowGridLines').checked,
+        pdfGridLineColSpacing: document.getElementById('pdfGridLineColSpacing').value,
+        pdfGridLineRowSpacing: document.getElementById('pdfGridLineRowSpacing').value,
     };
 }
 
@@ -570,42 +625,47 @@ function coletarConfiguracoesImpressao() {
 function aplicarConfiguracoesImpressao(config) {
     if (config.pdfPageWidthMm) document.getElementById('pdfPageWidthMm').value = config.pdfPageWidthMm;
     if (config.pdfPageHeightMm) document.getElementById('pdfPageHeightMm').value = config.pdfPageHeightMm;
-    if (config.pdfMarginMm && document.getElementById('pdfMarginMm')) document.getElementById('pdfMarginMm').value = config.pdfMarginMm;
-    if (config.pdfGamesNumbersXOffsetMm) document.getElementById('pdfGamesNumbersXOffsetMm').value = config.pdfGamesNumbersXOffsetMm;
-    // Adicione aqui outros campos conforme necessário
+    if (config.pdfGlobalOffsetX) document.getElementById('pdfGlobalOffsetX').value = config.pdfGlobalOffsetX;
+    if (config.pdfGlobalOffsetY) document.getElementById('pdfGlobalOffsetY').value = config.pdfGlobalOffsetY;
     if (config.pdfStartXMm) document.getElementById('pdfStartXMm').value = config.pdfStartXMm;
     if (config.pdfFirstGameYFromTopMm) document.getElementById('pdfFirstGameYFromTopMm').value = config.pdfFirstGameYFromTopMm;
-    if (config.pdfCellWidthMm) document.getElementById('pdfCellWidthMm').value = config.pdfCellWidthMm;
-    if (config.pdfCellHeightMm) document.getElementById('pdfCellHeightMm').value = config.pdfCellHeightMm;
-    if (config.pdfBorderWidthMm) document.getElementById('pdfBorderWidthMm').value = config.pdfBorderWidthMm;
-    if (config.pdfBorderHeightMm) document.getElementById('pdfBorderHeightMm').value = config.pdfBorderHeightMm;
+    if (config.pdfMarkWidthMm) document.getElementById('pdfMarkWidthMm').value = config.pdfMarkWidthMm;
+    if (config.pdfMarkHeightMm) document.getElementById('pdfMarkHeightMm').value = config.pdfMarkHeightMm;
+    if (config.pdfHorizontalSpacingMm) document.getElementById('pdfHorizontalSpacingMm').value = config.pdfHorizontalSpacingMm;
+    if (config.pdfVerticalSpacingMm) document.getElementById('pdfVerticalSpacingMm').value = config.pdfVerticalSpacingMm;
     if (config.pdfDistanceBetweenGamesMm) document.getElementById('pdfDistanceBetweenGamesMm').value = config.pdfDistanceBetweenGamesMm;
-    if (config.pdfAfterGameOffsetMm) document.getElementById('pdfAfterGameOffsetMm').value = config.pdfAfterGameOffsetMm;
-    if (config.pdfBolaoOffsetMm) document.getElementById('pdfBolaoOffsetMm').value = config.pdfBolaoOffsetMm;
-    if (config.pdfDefaultCotas) document.getElementById('pdfDefaultCotas').value = config.pdfDefaultCotas;
-    if (config.pdfPageNumberXOffsetMm) document.getElementById('pdfPageNumberXOffsetMm').value = config.pdfPageNumberXOffsetMm;
-    if (config.pdfPageNumberYOffsetMm) document.getElementById('pdfPageNumberYOffsetMm').value = config.pdfPageNumberYOffsetMm;
-    if (config.pdfGamesNumbersXOffsetMm) document.getElementById('pdfGamesNumbersXOffsetMm').value = config.pdfGamesNumbersXOffsetMm;
-    if (config.pdfGamesNumbersYOffsetMm) document.getElementById('pdfGamesNumbersYOffsetMm').value = config.pdfGamesNumbersYOffsetMm;
-    if (config.pdfGamesNumbersLineSpacingMm) document.getElementById('pdfGamesNumbersLineSpacingMm').value = config.pdfGamesNumbersLineSpacingMm;
-}
 
-/**
- * Atualiza o combobox (dropdown) com as configurações de impressão salvas no localStorage.
- */
-function atualizarComboConfigs() {
-    const combo = document.getElementById('combo-configs-salvas');
-    combo.innerHTML = '<option value="">Selecione uma configuração salva...</option>';
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key.startsWith('configImpressao_')) {
-            const nome = key.replace('configImpressao_', '');
-            const option = document.createElement('option');
-            option.value = key;
-            option.textContent = nome;
-            combo.appendChild(option);
-        }
+    if (config.pdfDezenasMarkXPosMm) document.getElementById('pdfDezenasMarkXPosMm').value = config.pdfDezenasMarkXPosMm;
+    if (config.pdfDezenasMarkYPosMm) document.getElementById('pdfDezenasMarkYPosMm').value = config.pdfDezenasMarkYPosMm;
+    if (config.pdfDezenasMarkCellWidthMm) document.getElementById('pdfDezenasMarkCellWidthMm').value = config.pdfDezenasMarkCellWidthMm;
+    if (config.pdfDezenasMarkCellHeightMm) document.getElementById('pdfDezenasMarkCellHeightMm').value = config.pdfDezenasMarkCellHeightMm;
+    if (config.pdfDezenasMarkHorizontalSpacingMm) document.getElementById('pdfDezenasMarkHorizontalSpacingMm').value = config.pdfDezenasMarkHorizontalSpacingMm;
+
+    if (config.pdfBolaoMarkXPosMm) document.getElementById('pdfBolaoMarkXPosMm').value = config.pdfBolaoMarkXPosMm;
+    if (config.pdfBolaoMarkYPosMm) document.getElementById('pdfBolaoMarkYPosMm').value = config.pdfBolaoMarkYPosMm;
+    if (config.pdfBolaoCellWidthMm) document.getElementById('pdfBolaoCellWidthMm').value = config.pdfBolaoCellWidthMm;
+    if (config.pdfBolaoCellHeightMm) document.getElementById('pdfBolaoCellHeightMm').value = config.pdfBolaoCellHeightMm;
+    if (config.pdfBolaoHorizontalSpacingMm) document.getElementById('pdfBolaoHorizontalSpacingMm').value = config.pdfBolaoHorizontalSpacingMm;
+    if (config.pdfBolaoVerticalSpacingMm) document.getElementById('pdfBolaoVerticalSpacingMm').value = config.pdfBolaoVerticalSpacingMm;
+    if (config.pdfCotas) document.getElementById('pdfCotas').value = config.pdfCotas;
+
+    if (config.pdfPageNumberXPosMm) document.getElementById('pdfPageNumberXPosMm').value = config.pdfPageNumberXPosMm;
+    if (config.pdfPageNumberYPosMm) document.getElementById('pdfPageNumberYPosMm').value = config.pdfPageNumberYPosMm;
+    if (config.pdfPageNumberFontSize) document.getElementById('pdfPageNumberFontSize').value = config.pdfPageNumberFontSize;
+    if (config.pdfGamesNumbersXPosMm) document.getElementById('pdfGamesNumbersXPosMm').value = config.pdfGamesNumbersXPosMm;
+    if (config.pdfGamesNumbersYPosMm) document.getElementById('pdfGamesNumbersYPosMm').value = config.pdfGamesNumbersYPosMm;
+    if (config.pdfGamesNumbersLineSpacingMm) document.getElementById('pdfGamesNumbersLineSpacingMm').value = config.pdfGamesNumbersLineSpacingMm;
+    if (config.pdfGamesNumbersFontSize) document.getElementById('pdfGamesNumbersFontSize').value = config.pdfGamesNumbersFontSize;
+    if (config.pdfShowLogoMarginLines !== undefined) document.getElementById('pdfShowLogoMarginLines').checked = config.pdfShowLogoMarginLines;
+
+    if (config.pdfShowGridLines !== undefined) document.getElementById('pdfShowGridLines').checked = config.pdfShowGridLines;
+    if (config.pdfGridLineColSpacing) document.getElementById('pdfGridLineColSpacing').value = config.pdfGridLineColSpacing;
+    if (config.pdfGridLineRowSpacing) document.getElementById('pdfGridLineRowSpacing').value = config.pdfGridLineRowSpacing;
+    // Trigger change to update UI
+    const gridCheckbox = document.getElementById('pdfShowGridLines');
+    if (gridCheckbox) {
+        gridCheckbox.dispatchEvent(new Event('change'));
     }
 }
 
-export { generateVolantePDF, coletarConfiguracoesImpressao, aplicarConfiguracoesImpressao, atualizarComboConfigs };
+export { generateVolantePDF, coletarConfiguracoesImpressao, aplicarConfiguracoesImpressao };

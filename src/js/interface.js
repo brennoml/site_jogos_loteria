@@ -1,5 +1,6 @@
 import { GAME_DEFAULTS } from './constants.js';
 import { generateReportPDF, generateReportWithGamesPDF } from './reportPdf.js';
+import { aplicarConfiguracoesImpressao } from './printPdf.js';
 import { combinationsCount, calculateInternalRepetitions } from './utils.js';
 import { validateAndGetFileInfo } from './validators.js';
 
@@ -76,7 +77,45 @@ function initializeInterface() {
     // Configurar event listeners para controles de estado
     setupGenerationControls();
     
+    populateCotasDropdown();
+    populateGridSpacingDropdowns();
+
     handleGlobalGameTypeChange();
+}
+
+/**
+ * Popula o menu de seleção de cotas do bolão.
+ */
+function populateCotasDropdown() {
+    const cotasSelect = document.getElementById('pdfCotas');
+    if (!cotasSelect) return;
+
+    cotasSelect.innerHTML = '';
+    cotasSelect.add(new Option('Nenhuma', 0)); // Opção padrão para não marcar
+
+    for (let i = 1; i <= 99; i++) {
+        cotasSelect.add(new Option(i, i));
+    }
+}
+
+/**
+ * Popula os menus de seleção de espaçamento da grade de alinhamento.
+ */
+function populateGridSpacingDropdowns() {
+    const colSelect = document.getElementById('pdfGridLineColSpacing');
+    const rowSelect = document.getElementById('pdfGridLineRowSpacing');
+
+    if (!colSelect || !rowSelect) return;
+
+    colSelect.innerHTML = '';
+    rowSelect.innerHTML = '';
+
+    for (let i = 1; i <= 10; i++) {
+        colSelect.add(new Option(`${i} mm`, i));
+        rowSelect.add(new Option(`${i} mm`, i));
+    }
+    colSelect.value = '1';
+    rowSelect.value = '1';
 }
 
 /**
@@ -480,59 +519,104 @@ function setPrintDefaults(gameType) {
         quina: {
             pdfPageWidthMm: '81',
             pdfPageHeightMm: '186',
-            pdfMarginMm: '0',
+            pdfGlobalOffsetX: '0',
+            pdfGlobalOffsetY: '0',
             pdfStartXMm: '10,4',
             pdfFirstGameYFromTopMm: '66',
-            pdfCellWidthMm: '6,34',
-            pdfCellHeightMm: '3,28',
-            pdfBorderWidthMm: '1,1',
-            pdfBorderHeightMm: '0,6',
+            pdfMarkWidthMm: '4,14',
+            pdfMarkHeightMm: '2,08',
+            pdfHorizontalSpacingMm: '2,2',
+            pdfVerticalSpacingMm: '1,2',
             pdfDistanceBetweenGamesMm: '6,7',
-            pdfAfterGameOffsetMm: '9',
-            pdfBolaoOffsetMm: '28,4',
-            pdfPageNumberXOffsetMm: '25',
-            pdfPageNumberYOffsetMm: '15,5',
-            pdfGamesNumbersXOffsetMm: '15',
-            pdfGamesNumbersYOffsetMm: '7',
-            pdfGamesNumbersLineSpacingMm: '4'
+            // Dezenas Jogadas
+            pdfDezenasMarkXPosMm: '10,4',
+            pdfDezenasMarkYPosMm: '134,2',
+            pdfDezenasMarkCellWidthMm: '4,14',
+            pdfDezenasMarkCellHeightMm: '2,08',
+            pdfDezenasMarkHorizontalSpacingMm: '2,2',
+            // Bolão
+            pdfBolaoMarkXPosMm: '10,4',
+            pdfBolaoMarkYPosMm: '133,5',
+            pdfBolaoCellWidthMm: '6,5',
+            pdfBolaoCellHeightMm: '3',
+            pdfBolaoHorizontalSpacingMm: '0',
+            pdfBolaoVerticalSpacingMm: '0,7',
+            // Número do Volante
+            pdfPageNumberXPosMm: '35,4', pdfPageNumberYPosMm: '170,5', pdfPageNumberFontSize: '18',
+            // Números das Bolas
+            pdfGamesNumbersXPosMm: '25,4', pdfGamesNumbersYPosMm: '179', pdfGamesNumbersLineSpacingMm: '4', pdfGamesNumbersFontSize: '10',
+            // Linhas de Grade
+            pdfShowGridLines: false,
+            pdfGridLineColSpacing: '1',
+            pdfGridLineRowSpacing: '1'
         },
         megasena: {
             pdfPageWidthMm: '81',
             pdfPageHeightMm: '186',
-            pdfMarginMm: '0',
+            pdfGlobalOffsetX: '0',
+            pdfGlobalOffsetY: '0',
             pdfStartXMm: '10,4',
             pdfFirstGameYFromTopMm: '66',
-            pdfCellWidthMm: '6,34',
-            pdfCellHeightMm: '3,28',
-            pdfBorderWidthMm: '1,1',
-            pdfBorderHeightMm: '0,6',
+            pdfMarkWidthMm: '4,14',
+            pdfMarkHeightMm: '2,08',
+            pdfHorizontalSpacingMm: '2,2',
+            pdfVerticalSpacingMm: '1,2',
             pdfDistanceBetweenGamesMm: '6,7',
-            pdfAfterGameOffsetMm: '9',
-            pdfBolaoOffsetMm: '28,4',
-            pdfPageNumberXOffsetMm: '25',
-            pdfPageNumberYOffsetMm: '15,5',
-            pdfGamesNumbersXOffsetMm: '15',
-            pdfGamesNumbersYOffsetMm: '7',
-            pdfGamesNumbersLineSpacingMm: '4'
+            // Dezenas Jogadas
+            pdfDezenasMarkXPosMm: '10,4',
+            pdfDezenasMarkYPosMm: '134,2',
+            pdfDezenasMarkCellWidthMm: '4,14',
+            pdfDezenasMarkCellHeightMm: '2,08',
+            pdfDezenasMarkHorizontalSpacingMm: '2,2',
+            // Bolão
+            pdfBolaoMarkXPosMm: '10,4',
+            pdfBolaoMarkYPosMm: '133,5',
+            pdfBolaoCellWidthMm: '6,5',
+            pdfBolaoCellHeightMm: '3',
+            pdfBolaoHorizontalSpacingMm: '0',
+            pdfBolaoVerticalSpacingMm: '0,7',
+            // Número do Volante
+            pdfPageNumberXPosMm: '35,4', pdfPageNumberYPosMm: '170,5', pdfPageNumberFontSize: '18',
+            // Números das Bolas
+            pdfGamesNumbersXPosMm: '25,4', pdfGamesNumbersYPosMm: '179', pdfGamesNumbersLineSpacingMm: '4', pdfGamesNumbersFontSize: '10',
+            // Linhas de Grade
+            pdfShowGridLines: false,
+            pdfGridLineColSpacing: '1',
+            pdfGridLineRowSpacing: '1'
         },
         lotofacil: {
             pdfPageWidthMm: '81',
             pdfPageHeightMm: '186',
-            pdfMarginMm: '0',
+            pdfGlobalOffsetX: '0',
+            pdfGlobalOffsetY: '0',
             pdfStartXMm: '8',
             pdfFirstGameYFromTopMm: '45,6',
-            pdfCellWidthMm: '12,45',
-            pdfCellHeightMm: '4,6',
-            pdfBorderWidthMm: '3,8',
-            pdfBorderHeightMm: '0,8',
+            pdfMarkWidthMm: '5,0',
+            pdfMarkHeightMm: '3,0',
+            pdfHorizontalSpacingMm: '7,45',
+            pdfVerticalSpacingMm: '1,6',
             pdfDistanceBetweenGamesMm: '2,7',
-            pdfAfterGameOffsetMm: '3,3',
-            pdfBolaoOffsetMm: '58,2',
-            pdfPageNumberXOffsetMm: '15',
-            pdfPageNumberYOffsetMm: '180',
-            pdfGamesNumbersXOffsetMm: '0',
-            pdfGamesNumbersYOffsetMm: '170',
-            pdfGamesNumbersLineSpacingMm: '5'
+            // Dezenas Jogadas
+            pdfDezenasMarkXPosMm: '8',
+            pdfDezenasMarkYPosMm: '101,8',
+            pdfDezenasMarkCellWidthMm: '5,0',
+            pdfDezenasMarkCellHeightMm: '3,0',
+            pdfDezenasMarkHorizontalSpacingMm: '7,45',
+            // Bolão
+            pdfBolaoMarkXPosMm: '8',
+            pdfBolaoMarkYPosMm: '159,8',
+            pdfBolaoCellWidthMm: '6,5',
+            pdfBolaoCellHeightMm: '3',
+            pdfBolaoHorizontalSpacingMm: '0',
+            pdfBolaoVerticalSpacingMm: '0,7',
+            // Número do Volante
+            pdfPageNumberXPosMm: '15', pdfPageNumberYPosMm: '180', pdfPageNumberFontSize: '18',
+            // Números das Bolas
+            pdfGamesNumbersXPosMm: '0', pdfGamesNumbersYPosMm: '170', pdfGamesNumbersLineSpacingMm: '5', pdfGamesNumbersFontSize: '10',
+            // Linhas de Grade
+            pdfShowGridLines: false,
+            pdfGridLineColSpacing: '1',
+            pdfGridLineRowSpacing: '1'
         }
     };
 
@@ -540,21 +624,55 @@ function setPrintDefaults(gameType) {
     // Atualiza os campos de impressão
     document.getElementById('pdfPageWidthMm').value = d.pdfPageWidthMm;
     document.getElementById('pdfPageHeightMm').value = d.pdfPageHeightMm;
-    document.getElementById('pdfMarginMm').value = d.pdfMarginMm;
+
+    // Substituído 'pdfMarginMm' por 'pdfGlobalOffsetX' e 'pdfGlobalOffsetY'
+    const offsetXEl = document.getElementById('pdfGlobalOffsetX');
+    const offsetYEl = document.getElementById('pdfGlobalOffsetY');
+    if (offsetXEl) offsetXEl.value = d.pdfGlobalOffsetX;
+    if (offsetYEl) offsetYEl.value = d.pdfGlobalOffsetY;
+
     document.getElementById('pdfStartXMm').value = d.pdfStartXMm;
     document.getElementById('pdfFirstGameYFromTopMm').value = d.pdfFirstGameYFromTopMm;
-    document.getElementById('pdfCellWidthMm').value = d.pdfCellWidthMm;
-    document.getElementById('pdfCellHeightMm').value = d.pdfCellHeightMm;
-    document.getElementById('pdfBorderWidthMm').value = d.pdfBorderWidthMm;
-    document.getElementById('pdfBorderHeightMm').value = d.pdfBorderHeightMm;
+    document.getElementById('pdfMarkWidthMm').value = d.pdfMarkWidthMm;
+    document.getElementById('pdfMarkHeightMm').value = d.pdfMarkHeightMm;
+    document.getElementById('pdfHorizontalSpacingMm').value = d.pdfHorizontalSpacingMm;
+    document.getElementById('pdfVerticalSpacingMm').value = d.pdfVerticalSpacingMm;
     document.getElementById('pdfDistanceBetweenGamesMm').value = d.pdfDistanceBetweenGamesMm;
-    document.getElementById('pdfAfterGameOffsetMm').value = d.pdfAfterGameOffsetMm;
-    document.getElementById('pdfBolaoOffsetMm').value = d.pdfBolaoOffsetMm;
-    document.getElementById('pdfPageNumberXOffsetMm').value = d.pdfPageNumberXOffsetMm;
-    document.getElementById('pdfPageNumberYOffsetMm').value = d.pdfPageNumberYOffsetMm;
-    document.getElementById('pdfGamesNumbersXOffsetMm').value = d.pdfGamesNumbersXOffsetMm;
-    document.getElementById('pdfGamesNumbersYOffsetMm').value = d.pdfGamesNumbersYOffsetMm;
+    
+    // Dezenas Jogadas
+    document.getElementById('pdfDezenasMarkXPosMm').value = d.pdfDezenasMarkXPosMm;
+    document.getElementById('pdfDezenasMarkYPosMm').value = d.pdfDezenasMarkYPosMm;
+    document.getElementById('pdfDezenasMarkCellWidthMm').value = d.pdfDezenasMarkCellWidthMm;
+    document.getElementById('pdfDezenasMarkCellHeightMm').value = d.pdfDezenasMarkCellHeightMm;
+    document.getElementById('pdfDezenasMarkHorizontalSpacingMm').value = d.pdfDezenasMarkHorizontalSpacingMm;
+
+    // Bolões
+    document.getElementById('pdfBolaoMarkXPosMm').value = d.pdfBolaoMarkXPosMm;
+    document.getElementById('pdfBolaoMarkYPosMm').value = d.pdfBolaoMarkYPosMm;
+    document.getElementById('pdfBolaoCellWidthMm').value = d.pdfBolaoCellWidthMm;
+    document.getElementById('pdfBolaoCellHeightMm').value = d.pdfBolaoCellHeightMm;
+    document.getElementById('pdfBolaoHorizontalSpacingMm').value = d.pdfBolaoHorizontalSpacingMm;
+    document.getElementById('pdfBolaoVerticalSpacingMm').value = d.pdfBolaoVerticalSpacingMm;
+    
+    // Número do Volante
+    document.getElementById('pdfPageNumberXPosMm').value = d.pdfPageNumberXPosMm;
+    document.getElementById('pdfPageNumberYPosMm').value = d.pdfPageNumberYPosMm;
+    document.getElementById('pdfPageNumberFontSize').value = d.pdfPageNumberFontSize;
+
+    // Números das bolas marcadas
+    document.getElementById('pdfGamesNumbersXPosMm').value = d.pdfGamesNumbersXPosMm;
+    document.getElementById('pdfGamesNumbersYPosMm').value = d.pdfGamesNumbersYPosMm;
     document.getElementById('pdfGamesNumbersLineSpacingMm').value = d.pdfGamesNumbersLineSpacingMm;
+    document.getElementById('pdfGamesNumbersFontSize').value = d.pdfGamesNumbersFontSize;
+
+    // Linhas de Grade
+    const gridCheckbox = document.getElementById('pdfShowGridLines');
+    if (gridCheckbox) {
+        gridCheckbox.checked = d.pdfShowGridLines;
+        gridCheckbox.dispatchEvent(new Event('change')); // Atualiza a visibilidade das opções
+    }
+    document.getElementById('pdfGridLineColSpacing').value = d.pdfGridLineColSpacing;
+    document.getElementById('pdfGridLineRowSpacing').value = d.pdfGridLineRowSpacing;
 }
 
 /**
@@ -607,6 +725,13 @@ function handleGlobalGameTypeChange() {
         setGenerationDefaults(selectedGame);
         filterAndRefreshManagedGamesList(selectedGame);
         createSimulationBallPanel(selectedGame);
+
+        // Após definir os padrões hardcoded, tenta carregar a configuração
+        // padrão salva pelo usuário para este tipo de jogo.
+        const savedDefaultConfig = localStorage.getItem(`configPadraoImpressao_${selectedGame}`);
+        if (savedDefaultConfig) {
+            aplicarConfiguracoesImpressao(JSON.parse(savedDefaultConfig));
+        }
     } catch (error) {
         console.error('Erro ao atualizar configurações:', error);
     }

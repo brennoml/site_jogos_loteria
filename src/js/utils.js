@@ -323,4 +323,80 @@ function calculateInternalRepetitions(games, groupSizes) {
     return repetitions;
 }
 
-export { combinations, randomChoice, getSubconjuntos, jogosJaGerados, formatBrazilianCurrency, formatBrazilianPercentage, updateProgress, combinationsCount, combinationsGenerator, calculateInternalRepetitions };
+/**
+ * Calculates the counts of each prize tier won for a set of user games against a single draw.
+ * Handles "desdobramento" for games with more numbers than the standard.
+ * @param {Array<Array<number>>} userGames - Array of user's games (can have variable lengths).
+ * @param {Array<number>} drawNumbers - The numbers from a single lottery draw.
+ * @param {object} gameConfig - The configuration for the game type (from GAME_ANALYSIS_CONFIG).
+ * @returns {object} An object with prize keys and their counts (e.g., { quadra: 2, quina: 1 }).
+ */
+function calculatePrizeCountsForGames(userGames, drawNumbers, gameConfig, downgradeMaxPrize = false) {
+    const prizeCounts = {};
+    gameConfig.prizeTiers.forEach(tier => { prizeCounts[tier.key] = 0; });
+
+    const drawNumbersSet = new Set(drawNumbers);
+
+    userGames.forEach(game => {
+        const userNumbers = game;
+        const hitsInGame = userNumbers.filter(num => drawNumbersSet.has(num)).length;
+
+        gameConfig.prizeTiers.forEach(tier => {
+            if (hitsInGame >= tier.hits && userNumbers.length >= tier.hits) {
+                const nonHitNumbersInGame = userNumbers.length - hitsInGame;
+                const numbersToDrawFromNonHits = gameConfig.expectedNumbers - tier.hits;
+
+                if (nonHitNumbersInGame >= numbersToDrawFromNonHits && numbersToDrawFromNonHits >= 0) {
+                    const combinationsOfHits = combinationsCount(hitsInGame, tier.hits);
+                    const combinationsOfNonHits = combinationsCount(nonHitNumbersInGame, numbersToDrawFromNonHits);
+                    const totalPrizesOfThisTier = combinationsOfHits * combinationsOfNonHits;
+                    
+                    if (totalPrizesOfThisTier > 0) {
+                        prizeCounts[tier.key] += totalPrizesOfThisTier;
+                    }
+                }
+            }
+        });
+    });
+
+    if (downgradeMaxPrize) {
+        const sortedTiers = [...gameConfig.prizeTiers].sort((a, b) => a.hits - b.hits);
+        if (sortedTiers.length >= 2) {
+            const maxPrizeTier = sortedTiers[sortedTiers.length - 1];
+            const secondMaxPrizeTier = sortedTiers[sortedTiers.length - 2];
+            
+            if (prizeCounts[maxPrizeTier.key] > 0) {
+                // Adiciona o número de prêmios máximos ao prêmio imediatamente inferior
+                prizeCounts[secondMaxPrizeTier.key] = (prizeCounts[secondMaxPrizeTier.key] || 0) + prizeCounts[maxPrizeTier.key];
+                // Zera o contador do prêmio máximo
+                prizeCounts[maxPrizeTier.key] = 0;
+            }
+        }
+    }
+
+    return prizeCounts;
+}
+
+/**
+ * Calculates the total prize money for a set of user games against a single draw.
+ * This function handles "desdobramento" for games with more numbers than the standard.
+ * @param {Array<Array<number>>} userGames - Array of user's games (can have variable lengths).
+ * @param {Array<number>} drawNumbers - The numbers from a single lottery draw.
+ * @param {object} gameConfig - The configuration for the game type (from GAME_ANALYSIS_CONFIG).
+ * @param {object} prizeValues - An object mapping prize keys (e.g., 'quadra') to their monetary value.
+ * @returns {number} The total prize money won from all user games in this single draw.
+ */
+function calculatePrizesForGames(userGames, drawNumbers, gameConfig, prizeValues, downgradeMaxPrize = false) {
+    const prizeCounts = calculatePrizeCountsForGames(userGames, drawNumbers, gameConfig, downgradeMaxPrize);
+    let totalPrize = 0;
+
+    for (const tierKey in prizeCounts) {
+        if (prizeCounts[tierKey] > 0 && prizeValues[tierKey] !== undefined) {
+            totalPrize += prizeCounts[tierKey] * prizeValues[tierKey];
+        }
+    }
+    
+    return totalPrize;
+}
+
+export { combinations, randomChoice, getSubconjuntos, jogosJaGerados, formatBrazilianCurrency, formatBrazilianPercentage, updateProgress, combinationsCount, combinationsGenerator, calculateInternalRepetitions, calculatePrizeCountsForGames, calculatePrizesForGames };

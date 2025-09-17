@@ -1,8 +1,8 @@
 import { initializeInterface, handleGlobalGameTypeChange, updateGenerationInputsState, showNotification, createSimulationBallPanel, updateSimulationBallPanelStats, showGenerationReport, addManagedGame } from './interface.js';
 import { gerarJogosSemAcertosGarantidosRepetidos } from './generate.js';
 import { executeAnalysis, saveAnalysisToExcel, printPieChartsToPDF } from './analyze.js';
-import { generateVolantePDF, coletarConfiguracoesImpressao, aplicarConfiguracoesImpressao, atualizarComboConfigs } from './printPdf.js';
-import { validateGameConfig, parseBrazilianNumber } from './validators.js';
+import { generateVolantePDF, coletarConfiguracoesImpressao, aplicarConfiguracoesImpressao } from './printPdf.js';
+import { validateGameConfig, parseBrazilianNumber, validateAndGetFileInfo } from './validators.js';
 import { updateProgress, jogosJaGerados, combinations } from './utils.js';
 import { GAME_DEFAULTS, GAME_COSTS } from './constants.js';
 
@@ -135,6 +135,58 @@ function setupMainButtons() {
 }
 
 /**
+ * Coleta e valida a configuração de geração de jogos a partir da interface do usuário.
+ * @returns {object} O objeto de configuração.
+ * @throws {Error} Se a configuração for inválida.
+ * @private
+ */
+function _getGenerationConfig() {
+    const tipoJogo = document.getElementById('gameTypeGlobal')?.value || 'megasena';
+    const defaults = GAME_DEFAULTS[tipoJogo] || GAME_DEFAULTS.megasena;
+
+    const dezenasSelecionadas = Array.from(document.querySelectorAll('#ball-selection-panel .ball.active')).map(b => parseInt(b.dataset.number));
+    const dezenasFavoritas = Array.from(document.querySelectorAll('#ball-selection-panel .ball.favorite')).map(b => parseInt(b.dataset.number));
+
+    let algoritmo;
+    if (document.getElementById('geracaoAleatoria').checked) {
+        algoritmo = 'aleatorio';
+    } else if (document.getElementById('geracaoCombinatoriaSequencial').checked) {
+        algoritmo = 'combinatorio_sequencial';
+    } else {
+        algoritmo = 'combinatorio_aleatorio';
+    }
+
+    const config = {
+        totalBolas: defaults.totalBolas,
+        dezenasSelecionadas: dezenasSelecionadas,
+        dezenasFavoritas: dezenasFavoritas,
+        qtdBolasSelecionadas: dezenasSelecionadas.length,
+        algoritmo: algoritmo,
+        maxTime: parseInt(document.getElementById('maxTimeSelect').value) || 30,
+        usarPesoFavoritas: document.getElementById('usarPesoFavoritas').checked,
+        pesoFavoritas: parseInt(document.getElementById('pesoFavoritasSelect').value) || 10,
+        dezenasJogadas: parseInt(document.getElementById('dezenasJogadas').value),
+        acertosGarantidos: parseInt(document.getElementById('acertosGarantidos').value),
+        quantidadeJogos: parseBrazilianNumber(document.getElementById('quantidadeJogos').value) || defaults.quantidadeJogos,
+        aproveitaJogos: document.getElementById('aproveitaJogos').checked,
+        forcarUniversoJogosAproveitados: document.getElementById('forcarUniversoJogosAproveitados').checked,
+        validarRepeticaoJogosAproveitados: document.getElementById('validarRepeticaoJogosAproveitados').checked,
+        validarUniversoJogosAproveitados: document.getElementById('validarUniversoJogosAproveitados').checked,
+        jogosExistentes: [],
+        tipoJogo: tipoJogo,
+        dezenasSimples: defaults.dezenasJogadas,
+    };
+
+    if (config.usarPesoFavoritas && config.dezenasFavoritas.length === 0) {
+        throw new Error("A opção de usar peso para favoritas está marcada, mas nenhuma bola foi marcada como favorita (duplo clique).");
+    }
+
+    // A validação completa (validateGameConfig) será chamada após a coleta dos jogos existentes.
+    return config;
+}
+
+
+/**
  * Orquestra a geração de jogos quando o botão "Gerar Jogos" é clicado.
  * Esta função atua como um "controller", lendo a UI, chamando a lógica de geração,
  * e atualizando a UI com os resultados e progresso.
@@ -159,58 +211,14 @@ async function handleGenerateGamesClick() {
 
     try {
         const startTime = performance.now();
+        const config = _getGenerationConfig();
 
-        const tipoJogo = document.getElementById('gameTypeGlobal')?.value || 'megasena';
-        const defaults = GAME_DEFAULTS[tipoJogo] || GAME_DEFAULTS.megasena;
-
-        // Coleta de dezenas do novo painel
-        const dezenasSelecionadas = Array.from(document.querySelectorAll('#ball-selection-panel .ball.active')).map(b => parseInt(b.dataset.number));
-        const dezenasFavoritas = Array.from(document.querySelectorAll('#ball-selection-panel .ball.favorite')).map(b => parseInt(b.dataset.number));
-
-        let algoritmo;
-        let algoritmoDisplay;
-        if (document.getElementById('geracaoAleatoria').checked) {
-            algoritmo = 'aleatorio';
-            algoritmoDisplay = 'Aleatório';
-        } else if (document.getElementById('geracaoCombinatoriaSequencial').checked) {
-            algoritmo = 'combinatorio_sequencial';
-            algoritmoDisplay = 'Combinatória em Sequência';
-        } else { // Default ou geracaoCombinatoriaAleatoria is checked
-            algoritmo = 'combinatorio_aleatorio';
-            algoritmoDisplay = 'Combinatória Aleatória';
-        }
-
-        const config = {
-            totalBolas: defaults.totalBolas,
-            dezenasSelecionadas: dezenasSelecionadas,
-            dezenasFavoritas: dezenasFavoritas,
-            qtdBolasSelecionadas: dezenasSelecionadas.length,
-            algoritmo: algoritmo,
-            maxTime: parseInt(document.getElementById('maxTimeSelect').value) || 30,
-            usarPesoFavoritas: document.getElementById('usarPesoFavoritas').checked,
-            pesoFavoritas: parseInt(document.getElementById('pesoFavoritasSelect').value) || 10,
-
-            dezenasJogadas: parseInt(document.getElementById('dezenasJogadas').value),
-            acertosGarantidos: parseInt(document.getElementById('acertosGarantidos').value),
-            quantidadeJogos: parseBrazilianNumber(document.getElementById('quantidadeJogos').value) || defaults.quantidadeJogos,
-            
-            aproveitaJogos: document.getElementById('aproveitaJogos').checked,
-            forcarUniversoJogosAproveitados: document.getElementById('forcarUniversoJogosAproveitados').checked,
-            validarRepeticaoJogosAproveitados: document.getElementById('validarRepeticaoJogosAproveitados').checked,
-            validarUniversoJogosAproveitados: document.getElementById('validarUniversoJogosAproveitados').checked,
-            jogosExistentes: [],
+        const algoritmoDisplayMap = {
+            aleatorio: 'Aleatório',
+            combinatorio_sequencial: 'Combinatória em Sequência',
+            combinatorio_aleatorio: 'Combinatória Aleatória'
         };
-
-        // Adiciona validação para o painel de bolas
-        if (config.dezenasSelecionadas.length === 0) {
-            throw new Error("Nenhuma dezena foi selecionada no painel. Clique nas bolas para formar seu universo de jogo.");
-        }
-        if (config.dezenasSelecionadas.length < config.dezenasJogadas) {
-            throw new Error(`O número de dezenas selecionadas (${config.dezenasSelecionadas.length}) é menor que as dezenas por jogo (${config.dezenasJogadas}).`);
-        }
-        if (config.usarPesoFavoritas && config.dezenasFavoritas.length === 0) {
-            throw new Error("A opção de usar peso para favoritas está marcada, mas nenhuma bola foi marcada como favorita (duplo clique).");
-        }
+        const algoritmoDisplay = algoritmoDisplayMap[config.algoritmo];
         
         // Coleta jogos externos a partir da nova lista na UI ANTES da validação principal
         if (config.aproveitaJogos) {
@@ -223,6 +231,12 @@ async function handleGenerateGamesClick() {
 
             for (const checkbox of checkedItems) {
                 const wrapper = checkbox.closest('.file-item-analise-wrapper');
+                
+                // Adicionado: Pular itens que não estão visíveis (filtrados por tipo de jogo)
+                if (wrapper.style.display === 'none') {
+                    continue;
+                }
+
                 const itemId = wrapper.dataset.itemId;
                 const gameData = window.managedGames[itemId];
 
@@ -309,7 +323,7 @@ async function handleGenerateGamesClick() {
         ws['!cols'] = Array(maxDezenasNoResultado).fill({ wch: 10 });
         XLSX.utils.book_append_sheet(wb, ws, 'Jogos Gerados');
         
-        const tabelaCustos = GAME_COSTS[tipoJogo] || {};
+        const tabelaCustos = GAME_COSTS[config.tipoJogo] || {};
         let custoJogosAproveitados = 0;
         let custoJogosNovos = 0;
 
@@ -343,11 +357,11 @@ async function handleGenerateGamesClick() {
             jogosNovos: jogos.length - jogosAproveitados,
             tempoGeracao: ((endTime - startTime) / 1000).toFixed(2),
             parametros: {
-                tipoJogo: tipoJogo.charAt(0).toUpperCase() + tipoJogo.slice(1),
+                tipoJogo: config.tipoJogo.charAt(0).toUpperCase() + config.tipoJogo.slice(1),
                 universo: config.qtdBolasSelecionadas,
                 dezenasJogadas: config.dezenasJogadas,
                 acertosGarantidos: config.acertosGarantidos,
-                dezenasSimples: defaults.dezenasJogadas,
+                dezenasSimples: config.dezenasSimples,
                 algoritmo: algoritmoDisplay,
                 timeout: config.maxTime,
                 usouPeso: config.usarPesoFavoritas,
@@ -368,8 +382,8 @@ async function handleGenerateGamesClick() {
             custoJogosAproveitados: custoJogosAproveitados,
             custoJogosNovos: custoJogosNovos,
             jogosEquivalentes: jogos.reduce((acc, jogo) => {
-                if (jogo.length > defaults.dezenasJogadas) {
-                    return acc + combinations(jogo, defaults.dezenasJogadas).length;
+                if (jogo.length > config.dezenasSimples) {
+                    return acc + combinations(jogo, config.dezenasSimples).length;
                 }
                 return acc + 1;
             }, 0),
@@ -492,15 +506,15 @@ function setupGameTypeControl() {
  * @returns {void}
  */
 function setupAnalysisChartControls() {
-    // Controle de personalização dos eixos do gráfico
-
     // Botão para exportar gráfico em PDF
     const btnImprimirGrafico = document.getElementById('btn-imprimir-grafico-analise');
     if (btnImprimirGrafico) {
         btnImprimirGrafico.addEventListener('click', async function() {
             try {
                 const chartsModule = await import('./charts.js');
-                chartsModule.printChartToPDF();
+                if (chartsModule && chartsModule.printChartToPDF) {
+                    chartsModule.printChartToPDF();
+                }
             } catch (error) {
                 console.error('Erro ao imprimir gráfico:', error);
                 alert('Erro ao imprimir gráfico: ' + error.message);
@@ -508,14 +522,16 @@ function setupAnalysisChartControls() {
         });
     }
 
-    // Botões para controle dos eixos personalizados (reset e atualizar)
+    // --- Controles para o Gráfico de Prêmios Ordenados ---
     const resetButton = document.getElementById('analise-grafico-reset-eixos');
     const updateButton = document.getElementById('analise-grafico-atualizar-eixos');
 
-    const updateAxes = async () => {
+    const updateOrderedAxes = async () => {
         try {
             const chartsModule = await import('./charts.js');
-            chartsModule.updateChartAxes();
+            if (chartsModule && chartsModule.updateChartAxes) {
+                chartsModule.updateChartAxes();
+            }
         } catch (error) {
             console.warn('Módulo de gráficos não disponível:', error);
         }
@@ -525,8 +541,10 @@ function setupAnalysisChartControls() {
         resetButton.addEventListener('click', async function() {
             try {
                 const chartsModule = await import('./charts.js');
-                chartsModule.resetAxisSliders();
-                chartsModule.updateChartAxes();
+                if (chartsModule && chartsModule.resetAxisSliders && chartsModule.updateChartAxes) {
+                    chartsModule.resetAxisSliders();
+                    chartsModule.updateChartAxes();
+                }
             } catch (error) {
                 console.warn('Módulo de gráficos não disponível:', error);
             }
@@ -534,7 +552,7 @@ function setupAnalysisChartControls() {
     }
 
     if (updateButton) {
-        updateButton.addEventListener('click', updateAxes);
+        updateButton.addEventListener('click', updateOrderedAxes);
     }
 
     // Atualização automática quando os valores dos eixos são alterados
@@ -542,9 +560,81 @@ function setupAnalysisChartControls() {
     axisInputs.forEach(inputId => {
         const input = document.getElementById(inputId);
         if (input) {
-            input.addEventListener('blur', updateAxes);
-            input.addEventListener('keypress', e => { if (e.key === 'Enter') updateAxes(); });
+            input.addEventListener('blur', updateOrderedAxes);
+            input.addEventListener('keypress', e => { if (e.key === 'Enter') updateOrderedAxes(); });
         }
+    });
+
+    // --- NOVOS Controles para o Gráfico de Distribuição ---
+    const distResetButton = document.getElementById('dist-grafico-reset-eixos');
+    const distUpdateButton = document.getElementById('dist-grafico-atualizar-eixos');
+
+    const updateDistAxes = async () => {
+        try {
+            const chartsModule = await import('./charts.js');
+            if (chartsModule && chartsModule.updateDistChartAxes) {
+                chartsModule.updateDistChartAxes();
+            }
+        } catch (error) {
+            console.warn('Módulo de gráficos não disponível:', error);
+        }
+    };
+
+    if (distResetButton) {
+        distResetButton.addEventListener('click', async () => {
+            try {
+                const chartsModule = await import('./charts.js');
+                if (chartsModule && chartsModule.resetDistAxisSliders && chartsModule.updateDistChartAxes) {
+                    chartsModule.resetDistAxisSliders();
+                    chartsModule.updateDistChartAxes();
+                }
+            } catch (error) {
+                console.warn('Módulo de gráficos não disponível:', error);
+            }
+        });
+    }
+
+    if (distUpdateButton) {
+        distUpdateButton.addEventListener('click', updateDistAxes);
+    }
+
+    const distAxisInputs = ['dist-grafico-eixo-x-min', 'dist-grafico-eixo-x-max', 'dist-grafico-eixo-y-min', 'dist-grafico-eixo-y-max'];
+    distAxisInputs.forEach(inputId => {
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.addEventListener('blur', updateDistAxes);
+            input.addEventListener('keypress', e => { if (e.key === 'Enter') updateDistAxes(); });
+        }
+    });
+
+    // --- Controle para rebaixar prêmio máximo ---
+    const downgradeCheckboxes = document.querySelectorAll('.downgrade-max-prize-checkbox');
+
+    const regenerateChartsWithNewSettings = async () => {
+        try {
+            const chartsModule = await import('./charts.js');
+            if (chartsModule && chartsModule.generateResultCharts) {
+                await chartsModule.generateResultCharts();
+            } else {
+                throw new Error('Função generateResultCharts não encontrada.');
+            }
+        } catch (error) {
+            console.error('Erro ao regenerar gráficos:', error);
+            showNotification('status-graficos', `Erro ao regenerar gráficos: ${error.message}`, 'error');
+        }
+    };
+
+    downgradeCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', (e) => {
+            // Sincroniza os dois checkboxes
+            downgradeCheckboxes.forEach(cb => {
+                if (cb !== e.target) {
+                    cb.checked = e.target.checked;
+                }
+            });
+            // Regenera os gráficos com a nova configuração
+            regenerateChartsWithNewSettings();
+        });
     });
 }
 
@@ -611,6 +701,11 @@ function setupAnalysisTabControls() {
             if (this.checked) {
                 const allBallsFromCheckedFiles = new Set();
                 document.querySelectorAll('#analise-file-list .file-item-analise-wrapper').forEach(wrapper => {
+                    // Adicionado: Pular itens que não estão visíveis (filtrados por tipo de jogo)
+                    if (wrapper.style.display === 'none') {
+                        return; // 'return' em forEach é como 'continue' em um loop for.
+                    }
+
                     const checkbox = wrapper.querySelector('.file-item-analise input[type="checkbox"]');
                     const button = wrapper.querySelector('.btn-add-balls');
                     const gameId = wrapper.dataset.itemId;
@@ -647,47 +742,74 @@ function setupAnalysisTabControls() {
  * @returns {void}
  */
 function setupFileControls() {
-    const userFileAnaliseInput = document.getElementById('userFileAnaliseInput');
-    if (userFileAnaliseInput) {
-        userFileAnaliseInput.addEventListener('change', async function(e) {
-            const { addManagedGame } = await import('./interface.js');
-            const files = e.target.files;
-            for (const file of files) {
-                await addManagedGame(file);
-            }
-            this.value = ''; // Reseta o input
-        });
-    }
-
-    const fileControls = [
-        { inputId: 'pdfGameFile', displayId: 'pdfGameFileName' },
-        { inputId: 'pdfBackgroundImageFile', displayId: 'pdfBackgroundImageFileName' }
-    ];
-
-    // Listener para o input de jogos externos na aba Geração
-    const jogosExistentesInput = document.getElementById('jogosExistentesFile');
-    if (jogosExistentesInput) {
-        jogosExistentesInput.addEventListener('change', async function(e) {
-            const { addManagedGame } = await import('./interface.js');
-            if (e.target.files.length > 0) {
-                await addManagedGame(e.target.files[0]);
-            }
-            this.value = ''; // Reset input
-        });
-    }
-
-    // Configura listeners para outros arquivos individuais (PDF)
-    fileControls.forEach(({ inputId, displayId }) => {
+    // Handler para adicionar arquivos nas abas de Análise e Geração
+    const addGameInputs = ['userFileAnaliseInput', 'jogosExistentesFile'];
+    addGameInputs.forEach(inputId => {
         const input = document.getElementById(inputId);
         if (input) {
-            input.addEventListener('change', function() {
-                const display = document.getElementById(displayId);
-                if (display) {
-                    display.textContent = this.files.length > 0 ? this.files[0].name : '';
+            input.addEventListener('change', async function(e) {
+                const { addManagedGame } = await import('./interface.js');
+                const files = e.target.files;
+                for (const file of files) {
+                    await addManagedGame(file);
                 }
+                this.value = ''; // Reseta o input
             });
         }
     });
+
+    // Handler especial para o arquivo da aba de Impressão
+    const pdfGameFileInput = document.getElementById('pdfGameFile');
+    if (pdfGameFileInput) {
+        pdfGameFileInput.addEventListener('change', async (e) => {
+            const container = document.getElementById('pdf-file-info-container');
+            if (!container) return;
+            container.innerHTML = ''; // Limpa info anterior
+
+            if (e.target.files.length > 0) {
+                const file = e.target.files[0];
+                try {
+                    const fileInfo = await validateAndGetFileInfo(file);
+                    const gameTypeLabels = { megasena: 'MegaSena', quina: 'Quina', lotofacil: 'Lotofácil' };
+                    const currentGameType = document.getElementById('gameTypeGlobal').value;
+                    const currentLabel = gameTypeLabels[currentGameType];
+                    let typesHTML = fileInfo.inferredTypes.length > 0 ? fileInfo.inferredTypes.map(t => t === currentLabel ? `<b>${t}</b>` : t).join(' / ') : 'N/A';
+
+                    container.innerHTML = `
+                        <div class="file-item-analise-wrapper" style="display: block;">
+                            <div class="file-item-analise">
+                                <i class="fas fa-file-excel" style="margin-right: 8px; color: var(--primary-color);"></i>
+                                <span class="file-name">${file.name}</span>
+                                <button class="delete-btn" title="Remover arquivo"><i class="fas fa-times"></i></button>
+                            </div>
+                            <div class="file-item-details-frame">
+                                <div class="detail-line game-types"><i class="fas fa-dice detail-icon"></i> <b>Tipo:</b> ${typesHTML}</div>
+                                <div class="detail-line"><i class="fas fa-globe detail-icon"></i> <b>Bolas (${fileInfo.uniqueBalls.length}):</b> ${fileInfo.uniqueBalls.join(', ')}</div>
+                            </div>
+                        </div>`;
+
+                    container.querySelector('.delete-btn')?.addEventListener('click', () => {
+                        pdfGameFileInput.value = '';
+                        container.innerHTML = '';
+                    });
+                } catch (error) {
+                    container.innerHTML = `<div class="status-message error" style="display:flex;">Erro: ${error.message}</div>`;
+                    pdfGameFileInput.value = '';
+                }
+            }
+        });
+    }
+
+    // Handler para a imagem de fundo da impressão
+    const backgroundInput = document.getElementById('pdfBackgroundImageFile');
+    if (backgroundInput) {
+        backgroundInput.addEventListener('change', function() {
+            const display = document.getElementById('pdfBackgroundImageFileName');
+            if (display) {
+                display.textContent = this.files.length > 0 ? this.files[0].name : '';
+            }
+        });
+    }
 }
 
 /**
@@ -726,6 +848,15 @@ function setupPrintControls() {
             }
         });
     }
+
+    // NEW: Control for grid lines
+    const gridCheckbox = document.getElementById('pdfShowGridLines');
+    const gridOptions = document.getElementById('grid-lines-options');
+    if (gridCheckbox && gridOptions) {
+        gridCheckbox.addEventListener('change', function() {
+            gridOptions.style.display = this.checked ? 'block' : 'none';
+        });
+    }
 }
 
 /**
@@ -734,47 +865,60 @@ function setupPrintControls() {
  * @returns {void}
  */
 function setupPdfConfigControls() {
-    // Botão para salvar a configuração atual como padrão no localStorage
     const btnSalvarPadrao = document.getElementById('btn-salvar-config-padrao');
     if (btnSalvarPadrao) {
-        btnSalvarPadrao.onclick = function() {
+        btnSalvarPadrao.addEventListener('click', () => {
+            const gameType = document.getElementById('gameTypeGlobal').value;
             const config = coletarConfiguracoesImpressao();
-            localStorage.setItem('configPadraoImpressao', JSON.stringify(config));
-            alert('Configuração padrão salva!');
-            atualizarComboConfigs();
-        };
+            localStorage.setItem(`configPadraoImpressao_${gameType}`, JSON.stringify(config));
+            alert(`Configuração padrão para ${gameType.charAt(0).toUpperCase() + gameType.slice(1)} foi salva!`);
+        });
     }
 
-    // Botão para salvar a configuração atual com um nome personalizado
     const btnSalvarArquivo = document.getElementById('btn-salvar-config-arquivo');
     if (btnSalvarArquivo) {
-        btnSalvarArquivo.onclick = function() {
-            const nome = document.getElementById('nome-config-personalizada').value.trim();
-            if (!nome) {
-                alert('Digite um nome para a configuração.');
-                return;
-            }
+        btnSalvarArquivo.addEventListener('click', () => {
+            const gameType = document.getElementById('gameTypeGlobal').value;
+            const gameTypeLabel = document.querySelector(`#gameTypeGlobal option[value="${gameType}"]`).textContent.trim().split(' ').slice(1).join(' ') || gameType;
             const config = coletarConfiguracoesImpressao();
-            localStorage.setItem('configImpressao_' + nome, JSON.stringify(config));
-            alert(`Configuração "${nome}" salva!`);
-            atualizarComboConfigs();
-        };
+            const configJson = JSON.stringify(config, null, 2);
+            const blob = new Blob([configJson], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Ajustes de Volantes para ${gameTypeLabel}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
     }
 
-    // Botão para carregar uma configuração selecionada no combobox
     const btnCarregarConfig = document.getElementById('btn-carregar-config');
-    if (btnCarregarConfig) {
-        btnCarregarConfig.onclick = function() {
-            const combo = document.getElementById('combo-configs-salvas');
-            const key = combo.value;
-            if (!key) {
-                alert('Selecione uma configuração para carregar.');
-                return;
-            }
-            const config = JSON.parse(localStorage.getItem(key));
-            aplicarConfiguracoesImpressao(config);
-            alert('Configuração carregada!');
-        };
+    const configFile_input = document.getElementById('pdfConfigFile');
+    if (btnCarregarConfig && configFile_input) {
+        btnCarregarConfig.addEventListener('click', () => {
+            configFile_input.click();
+        });
+
+        configFile_input.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const config = JSON.parse(e.target.result);
+                    aplicarConfiguracoesImpressao(config);
+                    alert(`Configuração do arquivo "${file.name}" carregada!`);
+                } catch (err) {
+                    alert('Erro ao ler o arquivo de configuração. Verifique se o arquivo é um JSON válido.');
+                    console.error("Erro ao parsear JSON de configuração:", err);
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = ''; // Reset input to allow loading the same file again
+        });
     }
 }
 
@@ -806,11 +950,12 @@ function toggleTab(tabId) {
 document.addEventListener('DOMContentLoaded', () => {
     init();
 
-    // Carrega a configuração de impressão padrão, se existir
-    const configPadrao = localStorage.getItem('configPadraoImpressao');
-    if (configPadrao) {
-        aplicarConfiguracoesImpressao(JSON.parse(configPadrao));
+    // Carrega a configuração de impressão padrão para o jogo inicial, se existir.
+    // A função handleGlobalGameTypeChange (chamada em init) já define os padrões hardcoded,
+    // então aqui nós sobrescrevemos com o que estiver salvo.
+    const gameType = document.getElementById('gameTypeGlobal').value;
+    const savedDefaultConfig = localStorage.getItem(`configPadraoImpressao_${gameType}`);
+    if (savedDefaultConfig) {
+        aplicarConfiguracoesImpressao(JSON.parse(savedDefaultConfig));
     }
-    // Popula o combobox com as configurações salvas
-    atualizarComboConfigs();
 });

@@ -1,4 +1,4 @@
-import { combinations, randomChoice, formatBrazilianCurrency, formatBrazilianPercentage, combinationsCount, updateProgress } from './utils.js';
+import { combinations, randomChoice, formatBrazilianCurrency, formatBrazilianPercentage, combinationsCount, updateProgress, calculatePrizeCountsForGames } from './utils.js';
 import { parseBrazilianNumber } from './validators.js';
 import { PRIZE_DEFAULTS } from './constants.js';
 
@@ -9,7 +9,7 @@ window.pieCharts = window.pieCharts || {};
  * Configurações de análise para cada tipo de jogo.
  * Centraliza as regras e nomes de prêmios, eliminando a necessidade de blocos if/else repetitivos.
  */
-const GAME_ANALYSIS_CONFIG = {
+export const GAME_ANALYSIS_CONFIG = {
     megasena: {
         fileName: 'jogos_megasena_passados.xlsx',
         expectedNumbers: 6,
@@ -413,6 +413,11 @@ async function executeAnalysis() {
         // 1. Coletar arquivos de jogos do usuário da lista da UI
         const userGameFilesData = [];
         document.querySelectorAll('#analise-file-list .file-item-analise-wrapper').forEach(wrapper => {
+            // Adicionado: Pular itens que não estão visíveis (filtrados por tipo de jogo)
+            if (wrapper.style.display === 'none') {
+                return; // 'return' em forEach é como 'continue' em um loop for.
+            }
+
             const checkbox = wrapper.querySelector('.file-item-analise input[type="checkbox"]');
             if (checkbox && checkbox.checked) {
                 const gameId = wrapper.dataset.itemId;
@@ -592,36 +597,22 @@ async function executeAnalysis() {
             // Itera sobre os jogos ORIGINAIS para calcular os prêmios para o Excel
             // e determinar o melhor prêmio por simulação para os gráficos de pizza.
             allUserGamesData.forEach(fileData => {
+                const prizeCountsForFile = calculatePrizeCountsForGames(fileData.originalGames, Array.from(numerosHistoricos), gameConfig);
+                
                 let bestTierForThisFile = null;
+                const sortedTiers = [...gameConfig.prizeTiers].sort((a, b) => b.hits - a.hits);
 
-                fileData.originalGames.forEach(jogoOriginal => {
-                    const dezenasDoJogo = jogoOriginal.map(Number);
-                    const acertosNoJogo = dezenasDoJogo.filter(num => numerosHistoricos.has(num)).length;
-
-                    // Calcula os prêmios para cada faixa (para o Excel) e encontra o melhor prêmio
-                    gameConfig.prizeTiers.forEach(tier => {
-                        let premiosDesteTipo = 0;
-                        if (acertosNoJogo >= tier.hits && dezenasDoJogo.length >= tier.hits) {
-                            const dezenasNaoSorteadasNoJogo = dezenasDoJogo.length - acertosNoJogo;
-                            const dezenasASeremSorteadasDasNaoSorteadas = gameConfig.expectedNumbers - tier.hits;
-                            
-                            if (dezenasNaoSorteadasNoJogo >= dezenasASeremSorteadasDasNaoSorteadas && dezenasASeremSorteadasDasNaoSorteadas >= 0) {
-                                const combinacoesDeAcertos = combinationsCount(acertosNoJogo, tier.hits);
-                                const combinacoesDeNaoAcertos = combinationsCount(dezenasNaoSorteadasNoJogo, dezenasASeremSorteadasDasNaoSorteadas);
-                                premiosDesteTipo = combinacoesDeAcertos * combinacoesDeNaoAcertos;
-                            }
+                for (const tier of sortedTiers) {
+                    if (prizeCountsForFile[tier.key] > 0) {
+                        // Acumula para o relatório Excel
+                        premiosNesteSorteio[tier.key] += prizeCountsForFile[tier.key];
+                        
+                        // Encontra o melhor prêmio para este arquivo para o gráfico de pizza
+                        if (!bestTierForThisFile) {
+                            bestTierForThisFile = tier;
                         }
-
-                        if (premiosDesteTipo > 0) {
-                            premiosNesteSorteio[tier.key] += premiosDesteTipo; // Para o relatório Excel
-
-                            // Atualiza o melhor prêmio para este arquivo nesta simulação
-                            if (!bestTierForThisFile || tier.hits > bestTierForThisFile.hits) {
-                                bestTierForThisFile = tier;
-                            }
-                        }
-                    });
-                });
+                    }
+                }
 
                 bestTierByFileInSim[fileData.fileName] = bestTierForThisFile;
 
