@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:,"> <!-- Adicionado para evitar erro 404 de favicon -->
     <title>LotoPro - Sistema Profissional de Análise de Loterias</title>
-    <link rel="stylesheet" href="src/css/styles.css">
+    <link rel="stylesheet" href="src/css/styles.css?v=1.1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cleave.js/1.6.0/cleave.min.js"></script>
@@ -55,7 +55,7 @@
                     </button>
                     <button class="nav-tab" id="tab-impressao">
                         <i class="fas fa-print"></i>
-                        <span>Impressão PDF</span>
+                        <span>Impressão de Volantes</span>
                     </button>
                 </nav>
             </aside>
@@ -132,7 +132,7 @@
                                     <i class="fas fa-random"></i> Gerar jogos aleatórios
                                 </label>
                             </div>
-                            <div id="aleatorio-options" style="display: none; padding-left: 2rem; border-left: 2px solid var(--border-light); margin-top: 1rem;">
+                            <div id="aleatorio-options" style="padding-left: 2rem; border-left: 2px solid var(--border-light); margin-top: 1rem;">
                                 <div class="form-group">
                                     <label class="form-label" for="maxTimeSelect">
                                         <i class="fas fa-clock"></i> Tempo limite sem encontrar mais jogos
@@ -153,7 +153,7 @@
                                         <i class="fas fa-balance-scale"></i> Usar peso para bolas favoritas
                                     </label>
                                 </div>
-                                <div id="peso-favoritas-options" style="display: none;">
+                                <div id="peso-favoritas-options">
                                     <div class="form-group">
                                         <label class="form-label" for="pesoFavoritasSelect" title="Define quantas vezes uma bola favorita será adicionada ao globo de sorteio, aumentando sua chance.">
                                             <i class="fas fa-star"></i> Peso das Favoritas
@@ -186,7 +186,7 @@
                                     Aproveitar Jogos da lista
                                 </label>
                             </div>
-                            <div id="aproveitar-options" style="display: none; padding-left: 2rem; border-left: 2px solid var(--border-light); margin-top: 1rem;">
+                            <div id="aproveitar-options" style="padding-left: 2rem; border-left: 2px solid var(--border-light); margin-top: 1rem;">
                                 <div class="file-input-container">
                                     <input type="file" id="jogosExistentesFile" class="file-input" accept=".xlsx" aria-label="Arquivo de jogos existentes">
                                     <div class="file-input-button">
@@ -280,7 +280,7 @@
                         </div>
                     </div>
 
-                    <div id="prize-values-container" style="display: none;">
+                    <div id="prize-values-container">
                         <div class="form-grid" style="margin-top: 1rem;">
                             <div id="megasenaInputs" class="form-card prize-inputs active">
                                 <h3><i class="fas fa-money-bill-wave"></i> Valores - Mega-Sena</h3>
@@ -331,28 +331,28 @@
                             <i class="fas fa-play-circle"></i>
                             Executar Análise Completa
                         </button>
-                        <button id="btn-gerar-relatorio-excel" class="btn btn-success" style="display: none;">
+                        <button id="btn-gerar-relatorio-excel" class="btn btn-success">
                             <i class="fas fa-file-excel"></i>
                             Salvar Relatório Excel
                         </button>
-                        <button id="btn-imprimir-graficos-pizza" class="btn btn-success" style="display: none;">
+                        <button id="btn-imprimir-graficos-pizza" class="btn btn-success">
                             <i class="fas fa-chart-pie"></i>
                             Salvar Pizza PDF
                         </button>
-                        <button id="btn-imprimir-grafico-analise" class="btn btn-success" style="display: none;">
+                        <button id="btn-imprimir-grafico-analise" class="btn btn-success">
                             <i class="fas fa-chart-line"></i>
                             Salvar Gráfico Comparativo (PDF)
                         </button>
                     </div>
 
                     <div class="status-container">
-                        <div id="status-analise" class="status-message" style="display: none;"></div>
-                        <div id="progress-analise" class="status-message info" style="display: none;"></div>
-                        <div id="loader-analise" class="loader" style="display: none;">Analisando...</div>
+                        <div id="status-analise" class="status-message"></div>
+                        <div id="progress-analise" class="status-message info"></div>
+                        <div id="loader-analise" class="loader">Analisando...</div>
                     </div>
 
                     <!-- Display do Universo de Bolas da Simulação -->
-                    <div id="simulation-universe-display-wrapper" style="display: none; margin-top: 2rem;">
+                    <div id="simulation-universe-display-wrapper" style="margin-top: 2rem;">
                         <div class="section-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: none; align-items: center;">
                             <i class="fas fa-globe" style="color: var(--secondary-color);"></i>
                             <h3 style="font-size: 1.25rem;">Universo de Bolas Utilizado na Simulação</h3>
@@ -362,7 +362,7 @@
                     </div>
 
                     <!-- Gráficos de Pizza - Distribuição de Prêmios -->
-                    <div id="prize-distribution-charts-wrapper" style="display: none; margin-bottom: 2rem;">
+                    <div id="prize-distribution-charts-wrapper" style="margin-bottom: 2rem;">
                         <div class="section-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: none;">
                             <i class="fas fa-chart-pie" style="color: var(--primary-color);"></i>
                             <h3 style="font-size: 1.25rem;">Distribuição de Prêmios</h3>
@@ -373,39 +373,80 @@
                     </div>
 
                     <!-- Seção de Gráficos Integrada -->
-                    <div id="analise-graficos-section" style="display: none; margin-top: 2.5rem; border-top: 2px solid var(--border-light); padding-top: 2rem;">
+                    <div id="analise-graficos-section" style="margin-top: 2.5rem; border-top: 2px solid var(--border-light); padding-top: 2rem;">
                         <div class="section-header" style="margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: none;">
                             <i class="fas fa-chart-line" style="color: var(--secondary-color);"></i>
                             <h2 style="font-size: 1.5rem;">Visualização Gráfica Comparativa</h2>
                         </div>
-                        <div id="graficos-container" class="chart-container" style="display: none;">
-                            <!-- Chart será inserido aqui -->
-                        </div>
-                        <div class="chart-controls" style="margin-top: 2rem;">
-                            <h4><i class="fas fa-sliders-h"></i> Personalizar Eixos do Gráfico</h4>                            
-                            <div id="analise-grafico-eixos-config" style="margin-top: 1rem;">
-                                <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem;">
-                                    <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Mínimo X (%)</label><input type="text" id="analise-grafico-eixo-x-min" class="form-input number-2dp" value=""></div>
-                                    <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Máximo X (%)</label><input type="text" id="analise-grafico-eixo-x-max" class="form-input number-2dp" value=""></div>
-                                    <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Mínimo Y (R$)</label><input type="text" id="analise-grafico-eixo-y-min" class="form-input currency" value=""></div>
-                                    <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Máximo Y (R$)</label><input type="text" id="analise-grafico-eixo-y-max" class="form-input currency" value=""></div>
-                                    <div class="btn-group">
-                                        <button type="button" id="analise-grafico-atualizar-eixos" class="btn btn-primary" title="Atualizar Eixos">
-                                            <i class="fas fa-sync"></i>
-                                            Atualizar
-                                        </button>
-                                        <button type="button" id="analise-grafico-reset-eixos" class="btn btn-ghost" title="Resetar Eixos">
-                                            <i class="fas fa-undo"></i>
-                                            Resetar
-                                        </button>
+
+                        <!-- Gráfico 1: Prêmios Ordenados -->
+                        <div class="chart-wrapper">
+                            <div id="ordenados-chart-container" class="chart-container">
+                                <!-- Canvas for ordered prizes chart will be inserted here -->
+                            </div>
+                            <div class="chart-controls" style="margin-top: 2rem;">
+                                <h4><i class="fas fa-sliders-h"></i> Personalizar Eixos do Gráfico (Prêmios Ordenados)</h4>
+                                <div id="analise-grafico-eixos-config" style="margin-top: 1rem;">
+                                    <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem;">
+                                        <div class="form-checkbox" style="flex-basis: 100%; padding-bottom: 1rem; border-bottom: 1px solid var(--border-light);">
+                                            <input type="checkbox" id="downgradeMaxPrize" class="downgrade-max-prize-checkbox">
+                                            <label for="downgradeMaxPrize">Contabilizar prêmio máximo como prêmio inferior (Ex: Sena vira Quina)</label>
+                                        </div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Mínimo X (%)</label><input type="text" id="analise-grafico-eixo-x-min" class="form-input number-2dp" value=""></div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Máximo X (%)</label><input type="text" id="analise-grafico-eixo-x-max" class="form-input number-2dp" value=""></div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Mínimo Y (R$)</label><input type="text" id="analise-grafico-eixo-y-min" class="form-input currency" value=""></div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Máximo Y (R$)</label><input type="text" id="analise-grafico-eixo-y-max" class="form-input currency" value=""></div>
+                                        <div class="btn-group">
+                                            <button type="button" id="analise-grafico-atualizar-eixos" class="btn btn-primary" title="Atualizar Eixos">
+                                                <i class="fas fa-sync"></i>
+                                                Atualizar
+                                            </button>
+                                            <button type="button" id="analise-grafico-reset-eixos" class="btn btn-ghost" title="Resetar Eixos">
+                                                <i class="fas fa-undo"></i>
+                                                Resetar
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Gráfico 2: Distribuição de Prêmios -->
+                        <div class="chart-wrapper" style="margin-top: 2.5rem; border-top: 1px solid var(--border-light); padding-top: 1.5rem;">
+                            <div id="distribuicao-chart-container" class="chart-container">
+                                <!-- Canvas for distribution chart will be inserted here -->
+                            </div>
+                            <div class="chart-controls" style="margin-top: 2rem;">
+                                <h4><i class="fas fa-sliders-h"></i> Personalizar Eixos do Gráfico (Distribuição de Prêmios)</h4>
+                                <div id="dist-grafico-eixos-config" style="margin-top: 1rem;">
+                                    <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem;">
+                                        <div class="form-checkbox" style="flex-basis: 100%; padding-bottom: 1rem; border-bottom: 1px solid var(--border-light);">
+                                            <input type="checkbox" id="downgradeMaxPrizeDist" class="downgrade-max-prize-checkbox">
+                                            <label for="downgradeMaxPrizeDist">Contabilizar prêmio máximo como prêmio inferior (Ex: Sena vira Quina)</label>
+                                        </div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Mínimo X (R$)</label><input type="text" id="dist-grafico-eixo-x-min" class="form-input currency" value=""></div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Máximo X (R$)</label><input type="text" id="dist-grafico-eixo-x-max" class="form-input currency" value=""></div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Mínimo Y (Qtd)</label><input type="text" id="dist-grafico-eixo-y-min" class="form-input quantity" value=""></div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Máximo Y (Qtd)</label><input type="text" id="dist-grafico-eixo-y-max" class="form-input quantity" value=""></div>
+                                        <div class="btn-group">
+                                            <button type="button" id="dist-grafico-atualizar-eixos" class="btn btn-primary" title="Atualizar Eixos">
+                                                <i class="fas fa-sync"></i>
+                                                Atualizar
+                                            </button>
+                                            <button type="button" id="dist-grafico-reset-eixos" class="btn btn-ghost" title="Resetar Eixos">
+                                                <i class="fas fa-undo"></i>
+                                                Resetar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="status-container">
-                            <div id="status-graficos" class="status-message" style="display: none;"></div>
-                            <div id="progress-graficos" class="status-message info" style="display: none;"></div>
-                            <div id="loader-graficos" class="loader" style="display: none;">Gerando gráficos...</div>
+                            <div id="status-graficos" class="status-message"></div>
+                            <div id="progress-graficos" class="status-message info"></div>
+                            <div id="loader-graficos" class="loader">Gerando gráficos...</div>
                         </div>
                     </div>
                 </div>
@@ -414,174 +455,161 @@
                 <div id="impressao" class="tab-content">
                     <div class="section-header">
                         <i class="fas fa-print"></i>
-                        <h2>Impressão de Volantes PDF</h2>
+                        <h2>Impressão em Volantes</h2>
                     </div>
 
-                    <div class="form-grid">
-                        <div class="form-card">
-                            <h3><i class="fas fa-file-upload"></i> Arquivo de Jogos</h3>
-                            
-                            <div class="file-input-container">
-                                <input type="file" id="pdfGameFile" class="file-input" accept=".xlsx" aria-label="Arquivo Excel com jogos">
-                                <div class="file-input-button">
-                                    <i class="fas fa-upload"></i>
-                                    <span>Selecionar Arquivo</span>
-                                </div>
-                                <span id="pdfGameFileName" class="file-name-display"></span>
-                            </div>
-                        </div>
-
-                        <div class="form-card">
-                            <h3><i class="fas fa-ruler-combined"></i> Dimensões (mm)</h3>
-                            
-                            <div class="config-grid">
-                                <div class="form-group">
-                                    <label class="form-label">Largura da Página</label>
-                                    <input type="text" id="pdfPageWidthMm" class="form-input number-2dp" value="81">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Altura da Página</label>
-                                    <input type="text" id="pdfPageHeightMm" class="form-input number-2dp" value="186">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Margem</label>
-                                    <input type="text" id="pdfMarginMm" class="form-input number-2dp" value="0">
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="form-card">
-                            <h3><i class="fas fa-th"></i> Grade de Marcação</h3>
-                            
-                            <div class="config-grid">
-                                <div class="form-group">
-                                    <label class="form-label">Posição X Inicial</label>
-                                    <input type="text" id="pdfStartXMm" class="form-input number-2dp" value="10,4">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Posição Y Inicial</label>
-                                    <input type="text" id="pdfFirstGameYFromTopMm" class="form-input number-2dp" value="66">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Largura da Célula</label>
-                                    <input type="text" id="pdfCellWidthMm" class="form-input number-2dp" value="6,34">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Altura da Célula</label>
-                                    <input type="text" id="pdfCellHeightMm" class="form-input number-2dp" value="3,28">
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="form-card">
-                            <h3><i class="fas fa-border-style"></i> Bordas e Espaçamentos</h3>
-                            
-                            <div class="config-grid">
-                                <div class="form-group">
-                                    <label class="form-label">Largura da Borda</label>
-                                    <input type="text" id="pdfBorderWidthMm" class="form-input number-2dp" value="1,1">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Altura da Borda</label>
-                                    <input type="text" id="pdfBorderHeightMm" class="form-input number-2dp" value="0,6">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Distância Entre Jogos</label>
-                                    <input type="text" id="pdfDistanceBetweenGamesMm" class="form-input number-2dp" value="6,7">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Offset Após Jogo</label>
-                                    <input type="text" id="pdfAfterGameOffsetMm" class="form-input number-2dp" value="9">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Configurações adicionais em layout compacto -->
-                    <div class="config-panel">
-                        <h4><i class="fas fa-cogs"></i> Configurações Avançadas</h4>
-                        <div class="config-grid">
-                            <div class="form-group">
-                                <label class="form-label">Offset Bolão</label>
-                                <input type="text" id="pdfBolaoOffsetMm" class="form-input number-2dp" value="28,4">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Cotas Padrão</label>
-                                <input type="number" id="pdfDefaultCotas" class="form-input number" value="0">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Posição Número X</label>
-                                <input type="text" id="pdfPageNumberXOffsetMm" class="form-input number-2dp" value="25">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Posição Número Y</label>
-                                <input type="text" id="pdfPageNumberYOffsetMm" class="form-input number-2dp" value="15,5">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Dezenas X</label>
-                                <input type="text" id="pdfGamesNumbersXOffsetMm" class="form-input number-2dp" value="15">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Dezenas Y</label>
-                                <input type="text" id="pdfGamesNumbersYOffsetMm" class="form-input number-2dp" value="7">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Espaçamento Linhas</label>
-                                <input type="text" id="pdfGamesNumbersLineSpacingMm" class="form-input number-2dp" value="4">
-                            </div>
-                        </div>
+                    <div class="impressao-layout-grid">
                         
-                        <div class="form-checkbox">
-                            <input type="checkbox" id="pdfReadCotasFromExcel">
-                            <label for="pdfReadCotasFromExcel">Ler cotas da primeira coluna do Excel</label>
-                        </div>
-                        
-                        <div class="form-checkbox">
-                            <input type="checkbox" id="pdfPrintBackgroundImage">
-                            <label for="pdfPrintBackgroundImage">Usar imagem de fundo</label>
-                        </div>
-                        
-                        <div class="file-input-container" style="margin-top: 1rem;">
-                            <input type="file" id="pdfBackgroundImageFile" class="file-input" accept="image/*" disabled>
-                            <div class="file-input-button">
-                                <i class="fas fa-image"></i>
-                                <span>Imagem de Fundo</span>
+                        <div class="impressao-settings-column">
+                            <div class="form-grid">
+                                <div class="form-card">
+                                    <h3><i class="fas fa-ruler-combined"></i> Dimensões do Volante e Logo</h3>
+                                    <div class="config-grid">
+                                        <div class="form-group">
+                                            <label class="form-label">Largura do Volante</label>
+                                            <input type="text" id="pdfPageWidthMm" class="form-input number-2dp" value="81">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Altura do Volante</label>
+                                            <input type="text" id="pdfPageHeightMm" class="form-input number-2dp" value="186">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" title="Ajuste para compensar a margem esquerda da impressora ou do alinhamento do papel.">Margem Esquerda da Logo</label>
+                                            <input type="text" id="pdfGlobalOffsetX" class="form-input number-2dp" value="4,2">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label" title="Ajuste para compensar a margem superior da impressora ou do alinhamento do papel.">Margem Superior da Logo</label>
+                                            <input type="text" id="pdfGlobalOffsetY" class="form-input number-2dp" value="5,3">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="form-card">
+                                    <h3><i class="fas fa-th"></i> Grade de Jogos</h3>
+                                    <div class="config-grid">
+                                        <div class="form-group">
+                                            <label class="form-label">Margem Esquerda da Grade</label>
+                                            <input type="text" id="pdfStartXMm" class="form-input number-2dp" value="10,4">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Margem Superior da Grade</label>
+                                            <input type="text" id="pdfFirstGameYFromTopMm" class="form-input number-2dp" value="66">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Largura da Marcação</label>
+                                            <input type="text" id="pdfMarkWidthMm" class="form-input number-2dp" value="4,14">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Altura da Marcação</label>
+                                            <input type="text" id="pdfMarkHeightMm" class="form-input number-2dp" value="2,08">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Espaçamento Horizontal entre Marcações</label>
+                                            <input type="text" id="pdfHorizontalSpacingMm" class="form-input number-2dp" value="2,2">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Espaçamento Vertical entre Marcações</label>
+                                            <input type="text" id="pdfVerticalSpacingMm" class="form-input number-2dp" value="1,2">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Distância Entre Jogos</label>
+                                            <input type="text" id="pdfDistanceBetweenGamesMm" class="form-input number-2dp" value="6,7">
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <span id="pdfBackgroundImageFileName" class="file-name-display"></span>
+
+                            <div class="form-grid" style="margin-top: 1.5rem;">
+                                <div class="form-card">
+                                    <h3><i class="fas fa-star-of-life"></i> Dezenas Jogadas</h3>
+                                    <div class="config-grid">
+                                        <div class="form-group"><label class="form-label">Margem Esquerda</label><input type="text" id="pdfDezenasMarkXPosMm" class="form-input number-2dp" value="10,4"></div>
+                                        <div class="form-group"><label class="form-label">Margem Superior</label><input type="text" id="pdfDezenasMarkYPosMm" class="form-input number-2dp" value="134,2"></div>
+                                        <div class="form-group"><label class="form-label">Largura da Célula</label><input type="text" id="pdfDezenasMarkCellWidthMm" class="form-input number-2dp" value="4,14"></div>
+                                        <div class="form-group"><label class="form-label">Altura da Célula</label><input type="text" id="pdfDezenasMarkCellHeightMm" class="form-input number-2dp" value="2,08"></div>
+                                        <div class="form-group"><label class="form-label">Espaçamento Horizontal</label><input type="text" id="pdfDezenasMarkHorizontalSpacingMm" class="form-input number-2dp" value="2,2"></div>
+                                    </div>
+                                </div>
+                                <div class="form-card">
+                                    <h3><i class="fas fa-users"></i> Bolões</h3>
+                                    <div class="config-grid">
+                                        <div class="form-group"><label class="form-label">Margem Esquerda</label><input type="text" id="pdfBolaoMarkXPosMm" class="form-input number-2dp" value="10,4"></div>
+                                        <div class="form-group"><label class="form-label">Margem Superior</label><input type="text" id="pdfBolaoMarkYPosMm" class="form-input number-2dp" value="133,5"></div>
+                                        <div class="form-group"><label class="form-label">Largura da Célula</label><input type="text" id="pdfBolaoCellWidthMm" class="form-input number-2dp" value="6,5"></div>
+                                        <div class="form-group"><label class="form-label">Altura da Célula</label><input type="text" id="pdfBolaoCellHeightMm" class="form-input number-2dp" value="3"></div>
+                                        <div class="form-group"><label class="form-label">Espaçamento Horizontal</label><input type="text" id="pdfBolaoHorizontalSpacingMm" class="form-input number-2dp" value="0"></div>
+                                        <div class="form-group"><label class="form-label">Espaçamento Vertical</label><input type="text" id="pdfBolaoVerticalSpacingMm" class="form-input number-2dp" value="0.7"></div>
+                                        <div class="form-group"><label class="form-label">Cotas</label><select id="pdfCotas" class="form-select"></select></div>
+                                    </div>
+                                </div>
+                                <div class="form-card">
+                                    <h3><i class="fas fa-hashtag"></i> Número do Volante</h3>
+                                    <div class="config-grid">
+                                        <div class="form-group"><label class="form-label">Margem Esquerda</label><input type="text" id="pdfPageNumberXPosMm" class="form-input number-2dp" value="35,4"></div>
+                                        <div class="form-group"><label class="form-label">Margem Superior</label><input type="text" id="pdfPageNumberYPosMm" class="form-input number-2dp" value="170,5"></div>
+                                        <div class="form-group"><label class="form-label">Tamanho da Fonte</label><input type="text" id="pdfPageNumberFontSize" class="form-input number-2dp" value="18"></div>
+                                    </div>
+                                </div>
+                                <div class="form-card">
+                                    <h3><i class="fas fa-list-ol"></i> Números das bolas marcadas</h3>
+                                    <div class="config-grid">
+                                        <div class="form-group"><label class="form-label">Margem Esquerda</label><input type="text" id="pdfGamesNumbersXPosMm" class="form-input number-2dp" value="25,4"></div>
+                                        <div class="form-group"><label class="form-label">Margem Superior</label><input type="text" id="pdfGamesNumbersYPosMm" class="form-input number-2dp" value="179"></div>
+                                        <div class="form-group"><label class="form-label">Espaçamento entre linhas</label><input type="text" id="pdfGamesNumbersLineSpacingMm" class="form-input number-2dp" value="4"></div>
+                                        <div class="form-group"><label class="form-label">Tamanho da Fonte</label><input type="text" id="pdfGamesNumbersFontSize" class="form-input number-2dp" value="10"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Configurações adicionais em layout compacto -->
+                            <div class="config-panel">
+                                <h4><i class="fas fa-cogs"></i> Configurações Avançadas</h4>
+                                <div class="form-checkbox"><input type="checkbox" id="pdfShowLogoMarginLines"><label for="pdfShowLogoMarginLines">Exibir linhas de margem da logo</label></div>
+                                <div class="form-checkbox"><input type="checkbox" id="pdfShowGridLines"><label for="pdfShowGridLines">Exibir linhas de grade</label></div>
+                                <div id="grid-lines-options" style="padding-left: 2rem; border-left: 2px solid var(--border-light); margin-top: 1rem;">
+                                    <div class="config-grid">
+                                        <div class="form-group"><label class="form-label">Espaçamento Colunas (mm)</label><select id="pdfGridLineColSpacing" class="form-select"></select></div>
+                                        <div class="form-group"><label class="form-label">Espaçamento Linhas (mm)</label><select id="pdfGridLineRowSpacing" class="form-select"></select></div>
+                                    </div>
+                                </div>
+                                <div class="form-checkbox"><input type="checkbox" id="pdfPrintBackgroundImage"><label for="pdfPrintBackgroundImage">Usar imagem de fundo</label></div>
+                                <div class="file-input-container" style="margin-top: 1rem;">
+                                    <input type="file" id="pdfBackgroundImageFile" class="file-input" accept="image/*" disabled>
+                                    <div class="file-input-button"><i class="fas fa-image"></i><span>Imagem de Fundo</span></div>
+                                    <span id="pdfBackgroundImageFileName" class="file-name-display"></span>
+                                </div>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="btn-group">
-                        <button id="btn-gerar-pdf-volantes" class="btn btn-primary btn-full">
-                            <i class="fas fa-file-pdf"></i>
-                            Gerar PDF de Volantes
-                        </button>
-                        <button id="btn-salvar-config-padrao" class="btn btn-ghost">
-                            <i class="fas fa-save"></i>
-                            Salvar como Padrão
-                        </button>
-                        <button id="btn-salvar-config-arquivo" class="btn btn-ghost">
-                            <i class="fas fa-download"></i>
-                            Salvar Configuração
-                        </button>
-                    </div>
+                        <div class="impressao-actions-column">
+                            <div class="form-card">
+                                <h3><i class="fas fa-file-upload"></i> Jogo para Gerar Volantes</h3>
+                                <div class="file-input-container">
+                                    <input type="file" id="pdfGameFile" class="file-input" accept=".xlsx" aria-label="Arquivo Excel com jogos">
+                                    <div class="file-input-button">
+                                        <i class="fas fa-upload"></i>
+                                        <span>Selecionar Arquivo</span>
+                                    </div>
+                                </div>
+                                <div id="pdf-file-info-container" style="margin-top: 1rem;"></div>
+                            </div>
 
-                    <div style="margin-top: 1rem;">
-                        <input type="text" id="nome-config-personalizada" class="form-input" placeholder="Nome da configuração" style="margin-bottom: 0.5rem;">
-                        <div class="btn-group">
-                            <select id="combo-configs-salvas" class="form-select" style="flex: 1;">
-                                <option value="">Configurações salvas...</option>
-                            </select>
-                            <button id="btn-carregar-config" class="btn btn-secondary">
-                                <i class="fas fa-upload"></i>
-                                Carregar
-                            </button>
+                            <div class="form-card" style="margin-top: 1.5rem;">
+                                <h3><i class="fas fa-cogs"></i> Ações</h3>
+                                <div class="actions-button-group-vertical">
+                                    <button id="btn-gerar-pdf-volantes" class="btn btn-primary"><i class="fas fa-file-pdf"></i>Gerar PDF de Volantes</button>
+                                    <button id="btn-salvar-config-padrao" class="btn btn-ghost"><i class="fas fa-save"></i>Salvar como Padrão</button>
+                                    <button id="btn-salvar-config-arquivo" class="btn btn-success"><i class="fas fa-download"></i>Salvar Configuração</button>
+                                    <button id="btn-carregar-config" class="btn btn-success"><i class="fas fa-upload"></i>Carregar Configuração</button>
+                                    <input type="file" id="pdfConfigFile" class="file-input" accept=".json" style="display: none;">
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <div class="status-container">
-                        <div id="status-impressao" class="status-message" style="display: none;"></div>
-                        <div id="loader-impressao" class="loader" style="display: none;">Gerando PDF...</div>
+                        <div id="status-impressao" class="status-message"></div>
+                        <div id="loader-impressao" class="loader">Gerando PDF...</div>
                     </div>
                 </div>
 
@@ -590,7 +618,7 @@
     </div>
 
     <!-- Modal de Relatório de Geração -->
-    <div id="generation-report-modal" class="modal" style="display:none;">
+    <div id="generation-report-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>Relatório de Geração</h2>
@@ -628,14 +656,14 @@
             </div>
             <div class="modal-footer">
                 <button id="save-games-excel" class="btn btn-primary"><i class="fas fa-file-excel"></i> Salvar Jogos em Excel</button>
-                <button id="print-report-pdf" class="btn btn-secondary"><i class="fas fa-file-pdf"></i> Salvar Relatório em PDF</button>
-                <button id="print-report-with-games-pdf" class="btn btn-secondary"><i class="fas fa-file-alt"></i> Salvar Relatório com Jogos (PDF)</button>
+                <button id="print-report-pdf" class="btn btn-success"><i class="fas fa-file-pdf"></i> Salvar Relatório em PDF</button>
+                <button id="print-report-with-games-pdf" class="btn btn-success"><i class="fas fa-file-alt"></i> Salvar Relatório com Jogos (PDF)</button>
             </div>
         </div>
     </div>
 
     <!-- Modal de Progresso de Geração -->
-    <div id="generation-progress-modal" class="modal" style="display:none;">
+    <div id="generation-progress-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>Geração em Andamento</h2>
@@ -643,9 +671,9 @@
             </div>
             <div class="modal-body">
                 <div class="status-container-modal">
-                    <div id="status-geracao" class="status-message" style="display: none;"></div>
-                    <div id="progress-geracao" class="status-message info" style="display: none;"></div>
-                    <div id="loader-geracao" class="loader" style="display: none;"></div>
+                    <div id="status-geracao" class="status-message"></div>
+                    <div id="progress-geracao" class="status-message info"></div>
+                    <div id="loader-geracao" class="loader"></div>
                 </div>
             </div>
             <div class="modal-footer">
