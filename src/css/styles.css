@@ -419,18 +419,6 @@ body {
     transform: translateY(-1px);
 }
 
-.btn-secondary {
-    background: linear-gradient(135deg, var(--secondary-color), var(--secondary-dark));
-    color: var(--bg-primary);
-    box-shadow: var(--shadow-sm);
-}
-
-.btn-secondary:hover {
-    background: linear-gradient(135deg, var(--secondary-dark), #065f46);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-1px);
-}
-
 .btn-success {
     background: linear-gradient(135deg, var(--secondary-color), var(--secondary-dark));
     color: var(--bg-primary);
@@ -958,6 +946,35 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+/* --- ESTILOS PARA ELEMENTOS INICIALMENTE OCULTOS --- */
+#aleatorio-options,
+#peso-favoritas-options,
+#aproveitar-options,
+#prize-values-container,
+#btn-gerar-relatorio-excel,
+#btn-imprimir-graficos-pizza,
+#btn-imprimir-grafico-analise,
+#status-analise,
+#progress-analise,
+#loader-analise,
+#simulation-universe-display-wrapper,
+#prize-distribution-charts-wrapper,
+#analise-graficos-section,
+#graficos-container,
+#status-graficos,
+#progress-graficos,
+#loader-graficos,
+#grid-lines-options,
+#status-impressao,
+#loader-impressao,
+#generation-report-modal,
+#generation-progress-modal,
+#status-geracao,
+#progress-geracao,
+#loader-geracao {
+    display: none;
 }
 
 .modal-content {
