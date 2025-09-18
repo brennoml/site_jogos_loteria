@@ -22,8 +22,15 @@
 </head>
 <body>
     <div class="app-container">
+        <div class="mobile-overlay" id="mobile-overlay"></div>
         <main class="main-content">
             <aside class="sidebar">
+                <div class="mobile-header">
+                    <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Abrir menu">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h1 class="mobile-title">LotoPro</h1>
+                </div>
                 <div class="app-header-compact">
                     <h1 class="app-title-compact">
                         <i class="fas fa-chart-line"></i>
@@ -45,6 +52,10 @@
                 </div>
 
                 <nav class="nav-tabs">
+                    <div class="current-context">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <span id="sidebar-context">Geração de Jogos</span>
+                    </div>
                     <button class="nav-tab active" id="tab-geracao">
                         <i class="fas fa-magic"></i>
                         <span>Geração de Jogos</span>
@@ -61,6 +72,15 @@
             </aside>
 
             <div class="content-area">
+                <!-- BREADCRUMB -->
+                <nav class="breadcrumb" id="breadcrumb">
+                    <span class="breadcrumb-item">LotoPro</span>
+                    <i class="fas fa-chevron-right breadcrumb-separator"></i>
+                    <span class="breadcrumb-item active" id="current-section">Geração de Jogos</span>
+                    <i class="fas fa-chevron-right breadcrumb-separator" id="game-separator" style="display: none;"></i>
+                    <span class="breadcrumb-item" id="current-game" style="display: none;">Mega-Sena</span>
+                </nav>
+
                 <!-- GERAÇÃO DE JOGOS -->
                 <div id="geracao" class="tab-content active">
                     <div class="section-header">
@@ -79,7 +99,13 @@
                             <button id="btn-deselect-all-balls" class="btn btn-ghost">Limpar Seleção</button>
                             <button id="btn-convert-to-favorite" class="btn btn-ghost">Converter em Favoritas</button>
                         </div>
-                        <p class="instructions">Clique para selecionar/deselecionar. Dê um duplo clique para marcar/desmarcar como favorita <i class="fas fa-star favorite-icon"></i>.</p>
+                        <p class="instructions">
+                            Clique para selecionar/deselecionar. Dê um duplo clique para marcar/desmarcar como favorita <i class="fas fa-star favorite-icon"></i>.
+                            <span class="tooltip info-icon">
+                                <i class="fas fa-info-circle"></i>
+                                <span class="tooltip-text tooltip-bottom">Bolas favoritas (estrela) podem ter maior peso na geração aleatória. Use clique simples para selecionar e duplo clique para favoritar.</span>
+                            </span>
+                        </p>
                         <div id="ball-selection-panel" class="ball-panel">
                             <!-- As bolas serão inseridas aqui via JavaScript -->
                         </div>
@@ -101,6 +127,10 @@
                             <div class="form-group">
                                 <label class="form-label" for="acertosGarantidos">
                                     <i class="fas fa-bullseye"></i> Acertos Garantidos
+                                    <span class="tooltip info-icon">
+                                        <i class="fas fa-info-circle"></i>
+                                        <span class="tooltip-text">Número mínimo de acertos que todos os jogos gerados terão entre si quando comparados com o resultado do sorteio</span>
+                                    </span>
                                 </label>
                                 <select id="acertosGarantidos" class="form-select"></select>
                             </div>
@@ -110,24 +140,74 @@
                                 </label>
                                 <input type="text" id="quantidadeJogos" class="form-input quantity" value="100" aria-label="Máximo de Jogos a gerar">
                             </div>
+                            
+                            <div class="form-checkbox">
+                                <input type="checkbox" id="calcularCotas">
+                                <label for="calcularCotas">
+                                    <i class="fas fa-percentage"></i> Calcular Cotas
+                                    <span class="tooltip info-icon">
+                                        <i class="fas fa-info-circle"></i>
+                                        <span class="tooltip-text">Permite dividir o custo dos jogos em cotas e aplicar taxa de 35% para caixa quando necessário</span>
+                                    </span>
+                                </label>
+                            </div>
+                            
+                            <div id="cotas-options" style="display: none; padding-left: 2rem; border-left: 2px solid var(--border-light); margin-top: 1rem;">
+                                <div class="form-group">
+                                    <label class="form-label" for="quantidadeCotas">
+                                        <i class="fas fa-pie-chart"></i> Quantidade de Cotas do Jogo
+                                        <span class="tooltip info-icon">
+                                            <i class="fas fa-info-circle"></i>
+                                            <span class="tooltip-text">Total de cotas em que o jogo será dividido. Máximo permitido pela Caixa conforme número de jogos e dezenas</span>
+                                        </span>
+                                    </label>
+                                    <select id="quantidadeCotas" class="form-select">
+                                        <option value="1">1 cota</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label" for="cotasCompradas">
+                                        <i class="fas fa-shopping-cart"></i> Quantidade de Cotas Compradas
+                                        <span class="tooltip info-icon">
+                                            <i class="fas fa-info-circle"></i>
+                                            <span class="tooltip-text">Número de cotas que você comprará deste jogo</span>
+                                        </span>
+                                    </label>
+                                    <select id="cotasCompradas" class="form-select">
+                                        <option value="1">1 cota</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-checkbox">
+                                    <input type="checkbox" id="pago35Caixa">
+                                    <label for="pago35Caixa">
+                                        <i class="fas fa-building"></i> Pago 35% para caixa?
+                                        <span class="tooltip info-icon">
+                                            <i class="fas fa-info-circle"></i>
+                                            <span class="tooltip-text">Adiciona taxa de 35% ao custo das suas cotas (comissão da casa lotérica)</span>
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="form-card">
                             <h3><i class="fas fa-brain"></i> Algoritmo de Geração</h3>
                             <div class="form-checkbox">
-                                <input type="checkbox" id="geracaoCombinatoriaAleatoria">
+                                <input type="radio" name="generationAlgorithm" id="geracaoCombinatoriaAleatoria" value="combinatorio_aleatorio">
                                 <label for="geracaoCombinatoriaAleatoria">
                                     <i class="fas fa-cogs"></i> Gerar todos os jogos possíveis (Combinatória Aleatória)
                                 </label>
                             </div>
                             <div class="form-checkbox">
-                                <input type="checkbox" id="geracaoCombinatoriaSequencial">
+                                <input type="radio" name="generationAlgorithm" id="geracaoCombinatoriaSequencial" value="combinatorio_sequencial">
                                 <label for="geracaoCombinatoriaSequencial">
                                     <i class="fas fa-stream"></i> Gerar todos os jogos possíveis (Combinatória em Sequência)
                                 </label>
                             </div>
                             <div class="form-checkbox">
-                                <input type="checkbox" id="geracaoAleatoria" checked>
+                                <input type="radio" name="generationAlgorithm" id="geracaoAleatoria" value="aleatorio" checked>
                                 <label for="geracaoAleatoria">
                                     <i class="fas fa-random"></i> Gerar jogos aleatórios
                                 </label>
@@ -151,12 +231,20 @@
                                     <input type="checkbox" id="usarPesoFavoritas">
                                     <label for="usarPesoFavoritas">
                                         <i class="fas fa-balance-scale"></i> Usar peso para bolas favoritas
+                                        <span class="tooltip info-icon">
+                                            <i class="fas fa-info-circle"></i>
+                                            <span class="tooltip-text">Faz com que as bolas marcadas como favoritas tenham maior probabilidade de aparecer nos jogos</span>
+                                        </span>
                                     </label>
                                 </div>
                                 <div id="peso-favoritas-options">
                                     <div class="form-group">
                                         <label class="form-label" for="pesoFavoritasSelect" title="Define quantas vezes uma bola favorita será adicionada ao globo de sorteio, aumentando sua chance.">
                                             <i class="fas fa-star"></i> Peso das Favoritas
+                                            <span class="tooltip info-icon">
+                                                <i class="fas fa-info-circle"></i>
+                                                <span class="tooltip-text">Define quantas vezes mais chances as bolas favoritas terão de aparecer nos jogos gerados</span>
+                                            </span>
                                         </label>
                                         <select id="pesoFavoritasSelect" class="form-select">
                                             <option value="2">2x mais chances</option>
@@ -174,39 +262,57 @@
                                     <i class="fas fa-play"></i>
                                     Gerar Jogos
                                 </button>
+                                <button id="btn-visualizar-relatorio" class="btn btn-secondary btn-full" style="margin-top: 0.5rem; display: none;">
+                                    <i class="fas fa-chart-bar"></i>
+                                    Visualizar Relatório de Geração
+                                </button>
                             </div>
                         </div>
 
                         <div class="form-card">
-                            <h3><i class="fas fa-file-import"></i> Jogos Externos</h3>
+                            <h3><i class="fas fa-cogs"></i> Opções Avançadas</h3>
                             <div class="form-checkbox">
-                                <input type="checkbox" id="aproveitaJogos">
+                                <input type="checkbox" id="aproveitaJogos" disabled>
                                 <label for="aproveitaJogos">
                                     <i class="fas fa-recycle"></i>
-                                    Aproveitar Jogos da lista
+                                    Aproveitar jogos selecionados da lista
+                                    <i class="fas fa-question-circle help-icon" title="Utiliza os jogos marcados na lista abaixo como base para a geração, evitando repetições de combinações"></i>
                                 </label>
                             </div>
-                            <div id="aproveitar-options" style="padding-left: 2rem; border-left: 2px solid var(--border-light); margin-top: 1rem;">
-                                <div class="file-input-container">
-                                    <input type="file" id="jogosExistentesFile" class="file-input" accept=".xlsx" aria-label="Arquivo de jogos existentes">
-                                    <div class="file-input-button">
-                                        <i class="fas fa-plus-circle"></i>
-                                        <span>Adicionar Jogo em Excel</span>
-                                    </div>
+                            <div class="file-input-container" style="margin-top: 1rem;">
+                                <input type="file" id="jogosExistentesFile" class="file-input" accept=".xlsx" aria-label="Arquivo de jogos existentes">
+                                <div class="file-input-button">
+                                    <i class="fas fa-plus-circle"></i>
+                                    <span>Adicionar Jogo em Excel</span>
                                 </div>
-                                <div class="form-checkbox" style="margin-top: 1rem;">
-                                    <input type="checkbox" id="forcarUniversoJogosAproveitados">
-                                    <label for="forcarUniversoJogosAproveitados">Forçar usar apenas as bolas contidas nos jogos selecionados</label>
-                                </div>
-                                <div>
-                                    <input type="checkbox" id="validarRepeticaoJogosAproveitados">
-                                    <label for="validarRepeticaoJogosAproveitados">Validar repetição de acertos nos jogos aproveitados</label>
-                                </div>
-                                <div>
-                                    <input type="checkbox" id="validarUniversoJogosAproveitados">
-                                    <label for="validarUniversoJogosAproveitados">Validar se jogos aproveitados usam apenas as bolas selecionadas</label>
-                                </div>
-                                
+                            </div>
+                            <div class="form-checkbox" style="margin-top: 1rem;">
+                                <input type="checkbox" id="forcarUniversoJogosAproveitados" disabled>
+                                <label for="forcarUniversoJogosAproveitados">
+                                    Usar apenas bolas contidas nos jogos selecionados
+                                    <i class="fas fa-question-circle help-icon" title="Limita a geração de novos jogos usando somente as bolas que aparecem nos jogos aproveitados"></i>
+                                </label>
+                            </div>
+                            <div class="form-checkbox">
+                                <input type="checkbox" id="naoIncluirAproveitadosNoResultado" disabled>
+                                <label for="naoIncluirAproveitadosNoResultado">
+                                    Incluir jogos aproveitados no arquivo gerado
+                                    <i class="fas fa-question-circle help-icon" title="Quando marcado, os jogos aproveitados serão incluídos no arquivo Excel final junto com os novos jogos"></i>
+                                </label>
+                            </div>
+                            <div class="form-checkbox">
+                                <input type="checkbox" id="validarRepeticaoJogosAproveitados" disabled>
+                                <label for="validarRepeticaoJogosAproveitados">
+                                    Validar jogos aproveitados
+                                    <i class="fas fa-question-circle help-icon" title="Verifica se os jogos aproveitados não possuem repetições de combinações de acertos já utilizadas"></i>
+                                </label>
+                            </div>
+                            <div class="form-checkbox">
+                                <input type="checkbox" id="validarUniversoJogosAproveitados" disabled>
+                                <label for="validarUniversoJogosAproveitados">
+                                    Aproveitar apenas jogos que usam as bolas selecionadas
+                                    <i class="fas fa-question-circle help-icon" title="Considera apenas jogos que contenham exclusivamente as bolas selecionadas no painel de seleção"></i>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -249,17 +355,31 @@
                             <div class="form-group">
                                 <label class="form-label" for="simulatedGamesCount">
                                     <i class="fas fa-dice-d20"></i> Quantidade de jogos simulados
+                                    <span class="tooltip info-icon">
+                                        <i class="fas fa-info-circle"></i>
+                                        <span class="tooltip-text">Número de jogos aleatórios que serão gerados para simular sorteios e comparar com seus jogos</span>
+                                    </span>
                                 </label>
                                 <select id="simulatedGamesCount" class="form-select">
+                                    <option value="500">500 jogos</option>
                                     <option value="1000" selected>1.000 jogos</option>
+                                    <option value="5000">5.000 jogos</option>
                                     <option value="10000">10.000 jogos</option>
+                                    <option value="20000">20.000 jogos</option>
+                                    <option value="30000">30.000 jogos</option>
                                     <option value="50000">50.000 jogos</option>
                                     <option value="100000">100.000 jogos</option>
                                 </select>
                             </div>
                             <div class="form-checkbox">
                                 <input type="checkbox" id="useOnlyBallsFromTestGames">
-                                <label for="useOnlyBallsFromTestGames">Usar apenas bolas contidas nos jogos testados</label>
+                                <label for="useOnlyBallsFromTestGames">
+                                    Usar apenas bolas contidas nos jogos testados
+                                    <span class="tooltip info-icon">
+                                        <i class="fas fa-info-circle"></i>
+                                        <span class="tooltip-text">A simulação usará apenas as bolas que aparecem nos seus jogos, criando um cenário mais restrito</span>
+                                    </span>
+                                </label>
                             </div>
                             <div id="simulation-ball-panel-container" style="margin-top: 1rem;">
                                 <div class="ball-panel-controls">
@@ -275,7 +395,13 @@
                             </div>
                             <div class="form-checkbox" style="margin-top: 1rem;">
                                 <input type="checkbox" id="adjustPrizeValues">
-                                <label for="adjustPrizeValues">Ajustar valores dos prêmios e custos</label>
+                                <label for="adjustPrizeValues">
+                                    Ajustar valores dos prêmios e custos
+                                    <span class="tooltip info-icon">
+                                        <i class="fas fa-info-circle"></i>
+                                        <span class="tooltip-text">Permite personalizar os valores de prêmios para cada faixa de acerto e o custo da aposta</span>
+                                    </span>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -380,13 +506,19 @@
                         </div>
 
                         <!-- Gráfico 1: Prêmios Ordenados -->
-                        <div class="chart-wrapper">
-                            <div id="ordenados-chart-container" class="chart-container">
+                        <div class="chart-wrapper" style="border: 1px solid var(--border-light); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; background-color: var(--background-light);">
+                            <div class="chart-header" style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem;">
+                                <h3 style="margin: 0; color: var(--text-color); font-size: 1.2rem;">
+                                    <i class="fas fa-chart-line" style="margin-right: 0.5rem; color: var(--primary-color);"></i>
+                                    Prêmios por Sorteio (Ordenados por Valor)
+                                </h3>
+                            </div>
+                            <div id="ordenados-chart-container" class="chart-container" style="margin-bottom: 1.5rem;">
                                 <!-- Canvas for ordered prizes chart will be inserted here -->
                             </div>
-                            <div class="chart-controls" style="margin-top: 2rem;">
-                                <h4><i class="fas fa-sliders-h"></i> Personalizar Eixos do Gráfico (Prêmios Ordenados)</h4>
-                                <div id="analise-grafico-eixos-config" style="margin-top: 1rem;">
+                            <div class="chart-controls">
+                                <h4 style="margin-bottom: 1rem;"><i class="fas fa-sliders-h"></i> Personalizar Eixos do Gráfico</h4>
+                                <div id="analise-grafico-eixos-config">
                                     <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem;">
                                         <div class="form-checkbox" style="flex-basis: 100%; padding-bottom: 1rem; border-bottom: 1px solid var(--border-light);">
                                             <input type="checkbox" id="downgradeMaxPrize" class="downgrade-max-prize-checkbox">
@@ -411,14 +543,58 @@
                             </div>
                         </div>
 
-                        <!-- Gráfico 2: Distribuição de Prêmios -->
-                        <div class="chart-wrapper" style="margin-top: 2.5rem; border-top: 1px solid var(--border-light); padding-top: 1.5rem;">
-                            <div id="distribuicao-chart-container" class="chart-container">
+                        <!-- Gráfico 2: ROI por Sorteio -->
+                        <div class="chart-wrapper" style="border: 1px solid var(--border-light); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; background-color: var(--background-light);">
+                            <div class="chart-header" style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem;">
+                                <h3 style="margin: 0; color: var(--text-color); font-size: 1.2rem;">
+                                    <i class="fas fa-percentage" style="margin-right: 0.5rem; color: var(--primary-color);"></i>
+                                    ROI por Sorteio
+                                </h3>
+                            </div>
+                            <div id="roi-chart-container" class="chart-container" style="margin-bottom: 1.5rem;">
+                                <!-- Canvas for ROI chart will be inserted here -->
+                            </div>
+                            <div class="chart-controls">
+                                <h4 style="margin-bottom: 1rem;"><i class="fas fa-sliders-h"></i> Personalizar Eixos do Gráfico</h4>
+                                <div id="roi-grafico-eixos-config">
+                                    <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem;">
+                                        <div class="form-checkbox" style="flex-basis: 100%; padding-bottom: 1rem; border-bottom: 1px solid var(--border-light);">
+                                            <input type="checkbox" id="downgradeMaxPrizeRoi" class="downgrade-max-prize-checkbox">
+                                            <label for="downgradeMaxPrizeRoi">Contabilizar prêmio máximo como prêmio inferior (Ex: Sena vira Quina)</label>
+                                        </div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Mínimo X (%)</label><input type="text" id="roi-grafico-eixo-x-min" class="form-input number-2dp" value=""></div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Máximo X (%)</label><input type="text" id="roi-grafico-eixo-x-max" class="form-input number-2dp" value=""></div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Mínimo Y (%)</label><input type="text" id="roi-grafico-eixo-y-min" class="form-input number-2dp" value=""></div>
+                                        <div class="form-group" style="flex: 1; min-width: 120px;"><label class="form-label">Máximo Y (%)</label><input type="text" id="roi-grafico-eixo-y-max" class="form-input number-2dp" value=""></div>
+                                        <div class="btn-group">
+                                            <button type="button" id="roi-grafico-atualizar-eixos" class="btn btn-primary" title="Atualizar Eixos">
+                                                <i class="fas fa-sync"></i>
+                                                Atualizar
+                                            </button>
+                                            <button type="button" id="roi-grafico-reset-eixos" class="btn btn-ghost" title="Resetar Eixos">
+                                                <i class="fas fa-undo"></i>
+                                                Resetar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Gráfico 3: Distribuição de Prêmios -->
+                        <div class="chart-wrapper" style="border: 1px solid var(--border-light); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; background-color: var(--background-light);">
+                            <div class="chart-header" style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem;">
+                                <h3 style="margin: 0; color: var(--text-color); font-size: 1.2rem;">
+                                    <i class="fas fa-chart-scatter" style="margin-right: 0.5rem; color: var(--primary-color);"></i>
+                                    Distribuição de Prêmios por Sorteio
+                                </h3>
+                            </div>
+                            <div id="distribuicao-chart-container" class="chart-container" style="margin-bottom: 1.5rem;">
                                 <!-- Canvas for distribution chart will be inserted here -->
                             </div>
-                            <div class="chart-controls" style="margin-top: 2rem;">
-                                <h4><i class="fas fa-sliders-h"></i> Personalizar Eixos do Gráfico (Distribuição de Prêmios)</h4>
-                                <div id="dist-grafico-eixos-config" style="margin-top: 1rem;">
+                            <div class="chart-controls">
+                                <h4 style="margin-bottom: 1rem;"><i class="fas fa-sliders-h"></i> Personalizar Eixos do Gráfico</h4>
+                                <div id="dist-grafico-eixos-config">
                                     <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem;">
                                         <div class="form-checkbox" style="flex-basis: 100%; padding-bottom: 1rem; border-bottom: 1px solid var(--border-light);">
                                             <input type="checkbox" id="downgradeMaxPrizeDist" class="downgrade-max-prize-checkbox">
@@ -562,21 +738,31 @@
                             </div>
 
                             <!-- Configurações adicionais em layout compacto -->
-                            <div class="config-panel">
-                                <h4><i class="fas fa-cogs"></i> Configurações Avançadas</h4>
-                                <div class="form-checkbox"><input type="checkbox" id="pdfShowLogoMarginLines"><label for="pdfShowLogoMarginLines">Exibir linhas de margem da logo</label></div>
-                                <div class="form-checkbox"><input type="checkbox" id="pdfShowGridLines"><label for="pdfShowGridLines">Exibir linhas de grade</label></div>
-                                <div id="grid-lines-options" style="padding-left: 2rem; border-left: 2px solid var(--border-light); margin-top: 1rem;">
-                                    <div class="config-grid">
-                                        <div class="form-group"><label class="form-label">Espaçamento Colunas (mm)</label><select id="pdfGridLineColSpacing" class="form-select"></select></div>
-                                        <div class="form-group"><label class="form-label">Espaçamento Linhas (mm)</label><select id="pdfGridLineRowSpacing" class="form-select"></select></div>
+                            <div class="collapsible-section">
+                                <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                                    <div class="collapsible-title">
+                                        <i class="fas fa-cogs"></i>
+                                        <span>Configurações Avançadas</span>
                                     </div>
+                                    <i class="fas fa-chevron-down collapsible-icon"></i>
                                 </div>
-                                <div class="form-checkbox"><input type="checkbox" id="pdfPrintBackgroundImage"><label for="pdfPrintBackgroundImage">Usar imagem de fundo</label></div>
-                                <div class="file-input-container" style="margin-top: 1rem;">
-                                    <input type="file" id="pdfBackgroundImageFile" class="file-input" accept="image/*" disabled>
-                                    <div class="file-input-button"><i class="fas fa-image"></i><span>Imagem de Fundo</span></div>
-                                    <span id="pdfBackgroundImageFileName" class="file-name-display"></span>
+                                <div class="collapsible-content">
+                                    <div class="config-panel">
+                                        <div class="form-checkbox"><input type="checkbox" id="pdfShowLogoMarginLines"><label for="pdfShowLogoMarginLines">Exibir linhas de margem da logo</label></div>
+                                        <div class="form-checkbox"><input type="checkbox" id="pdfShowGridLines"><label for="pdfShowGridLines">Exibir linhas de grade</label></div>
+                                        <div id="grid-lines-options" style="padding-left: 2rem; border-left: 2px solid var(--border-light); margin-top: 1rem;">
+                                            <div class="config-grid">
+                                                <div class="form-group"><label class="form-label">Espaçamento Colunas (mm)</label><select id="pdfGridLineColSpacing" class="form-select"></select></div>
+                                                <div class="form-group"><label class="form-label">Espaçamento Linhas (mm)</label><select id="pdfGridLineRowSpacing" class="form-select"></select></div>
+                                            </div>
+                                        </div>
+                                        <div class="form-checkbox"><input type="checkbox" id="pdfPrintBackgroundImage"><label for="pdfPrintBackgroundImage">Usar imagem de fundo</label></div>
+                                        <div class="file-input-container" style="margin-top: 1rem;">
+                                            <input type="file" id="pdfBackgroundImageFile" class="file-input" accept="image/*" disabled>
+                                            <div class="file-input-button"><i class="fas fa-image"></i><span>Imagem de Fundo</span></div>
+                                            <span id="pdfBackgroundImageFileName" class="file-name-display"></span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -633,6 +819,11 @@
                     <h4><i class="fas fa-cogs"></i> Parâmetros da Geração</h4>
                     <div id="report-params-content" class="report-params-grid"></div>
                     
+                    <div id="report-cotas-section" style="display: none;">
+                        <h4><i class="fas fa-percentage"></i> Informações de Cotas</h4>
+                        <div id="report-cotas-content" class="report-params-grid"></div>
+                    </div>
+                    
                     <div id="report-aproveitados-details" class="report-details-section" style="display: none;">
                         <!-- Aproveitados details will be inserted here -->
                     </div>
@@ -684,6 +875,11 @@
             </div>
         </div>
     </div>
+
+    <!-- Botão de ajuda de atalhos -->
+    <button id="shortcuts-help-btn" class="shortcuts-help-btn" onclick="showKeyboardShortcutsHelp()" title="Atalhos de Teclado (Ctrl+H)">
+        <i class="fas fa-keyboard"></i>
+    </button>
 
 </body>
 </html>
