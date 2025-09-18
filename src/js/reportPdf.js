@@ -17,6 +17,65 @@ function setupPdfDocument(pdfInstance) {
 }
 
 /**
+ * Verifica se é necessário adic    addHeaderAndFooter();
+    
+    // Adicionar frequência de bolas se disponível
+    if (reportData.frequenciaBolas && reportData.frequenciaBolas.length > 0) {
+        addBallFrequencySection(reportData.frequenciaBolas);
+    }
+    
+    doc.save(`Relatorio_${reportData.jogosGerados}.pdf`);
+}
+
+/**
+ * Adiciona seção de frequência de bolas ao PDF
+ * @param {Array} frequenciaBolas - Array com dados de frequência das bolas
+ */
+function addBallFrequencySection(frequenciaBolas) {
+    doc.addPage();
+    y = margin;
+    drawSectionTitle('Frequência das Bolas Utilizadas');
+    
+    const ballRadius = 4;
+    const ballDiameter = ballRadius * 2;
+    const itemWidth = ballDiameter + 8;
+    const ballsPerRow = Math.floor((pageWidth - margin * 2) / itemWidth);
+    
+    // Ordenar por frequência decrescente
+    const sortedByFreq = [...frequenciaBolas].sort((a, b) => b.abs - a.abs);
+    
+    sortedByFreq.forEach((item, index) => {
+        checkPageBreak(ballDiameter + 16);
+
+        const col = index % ballsPerRow;
+        const row = Math.floor(index / ballsPerRow);
+
+        const x = margin + (col * itemWidth) + ballRadius;
+        const currentBallY = y + (row * (ballDiameter + 16)) + ballRadius;
+
+        // Desenha a bola
+        doc.setFillColor('#2563eb');
+        doc.circle(x, currentBallY, ballRadius, 'F');
+        doc.setFontSize(8); // Aumentado de 7 para 8
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor('#ffffff');
+        doc.text(String(item.bola).padStart(2, '0'), x, currentBallY, { align: 'center', baseline: 'middle' });
+
+        // Desenha as frequências
+        doc.setFontSize(6);
+        doc.setTextColor('#1f2937');
+        doc.setFont('helvetica', 'bold');
+        doc.text(item.abs.toString(), x, currentBallY + ballRadius + 3, { align: 'center' });
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor('#6b7280');
+        doc.text(`${item.rel.toFixed(1).replace('.', ',')}%`, x, currentBallY + ballRadius + 7, { align: 'center' });
+    });
+
+    addHeaderAndFooter();
+}
+
+/**
  * Verifica se é necessário adicionar uma nova página e reseta a posição Y.
  * @param {number} requiredHeight - A altura necessária para o próximo conteúdo.
  */
@@ -140,25 +199,33 @@ function drawBallPanel(title, subtitle, balls, highlights = {}) {
             textColor = '#166534';
         }
         if (highlights.inactive && highlights.inactive.has(ball)) {
-            fillColor = '#e0e0e0'; // grey
-            textColor = '#9e9e9e';
+            fillColor = '#9ca3af'; // Cinza mais escuro para não utilizadas
+            textColor = '#374151'; // Texto mais escuro
         }
         if (highlights.favorites && highlights.favorites.has(ball)) {
             isFavorite = true;
         }
 
+        // Desenhar contorno especial para bolas favoritas
+        if (isFavorite) {
+            doc.setDrawColor('#f59e0b'); // Cor dourada para o contorno
+            doc.setLineWidth(1.5); // Contorno mais grosso
+            doc.circle(x, y, ballRadius, 'S'); // Só o contorno
+        }
+        
         doc.setFillColor(fillColor);
         doc.circle(x, y, ballRadius, 'F');
-        doc.setFontSize(6);
+        doc.setFontSize(8); // Aumentado de 6 para 8
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(textColor);
         doc.text(String(ball).padStart(2, '0'), x, y, { align: 'center', baseline: 'middle' });
 
         if (isFavorite) {
-            doc.setFontSize(12);
+            doc.setFontSize(12); // Aumentar tamanho da estrela
             doc.setTextColor('#f59e0b');
-            // Usa o caractere de estrela e ajusta a posição
-            doc.text('★', x + ballRadius - 1, y - ballRadius + 2.5);
+            doc.setFont('helvetica', 'bold'); // Estrela em negrito
+            // Usa asterisco compatível como marcador de favorita
+            doc.text('*', x + ballRadius - 0.5, y - ballRadius + 1.5);
         }
     });
     
@@ -166,13 +233,46 @@ function drawBallPanel(title, subtitle, balls, highlights = {}) {
 }
 
 /**
+ * Limpa e valida os dados dos jogos, garantindo que sejam arrays de números.
+ * @param {Array} games - Array de jogos potencialmente com dados extras
+ * @returns {Array<Array<number>>} Array limpo de jogos
+ */
+function cleanGamesData(games) {
+    if (!Array.isArray(games)) return [];
+    
+    return games.map(game => {
+        // Se o jogo é uma string, tentar extrair apenas os números
+        if (typeof game === 'string') {
+            // Extrair números de 1-2 dígitos separados por vírgula ou espaço
+            const numbers = game.match(/\b\d{1,2}\b/g);
+            return numbers ? numbers.map(n => parseInt(n, 10)).filter(n => n >= 1 && n <= 60) : [];
+        }
+        
+        // Se é um array, filtrar apenas números válidos
+        if (Array.isArray(game)) {
+            return game.filter(item => {
+                const num = typeof item === 'number' ? item : parseInt(item, 10);
+                return !isNaN(num) && num >= 1 && num <= 60;
+            }).map(item => typeof item === 'number' ? item : parseInt(item, 10));
+        }
+        
+        // Se não é nem string nem array, retornar array vazio
+        return [];
+    }).filter(game => game.length > 0); // Remover jogos vazios
+}
+
+/**
  * Desenha a lista de jogos (aproveitados ou novos) em um frame com bolas visuais.
  * @param {string} title - Título da seção de jogos.
  * @param {Array<Array<number>>} games - A lista de jogos a serem desenhados.
  * @param {number} startIndex - O índice inicial para a numeração dos jogos.
+ * @param {object} reportData - Dados do relatório para identificar favoritas e não utilizadas.
  */
-function renderGamesWithBalls(title, games, startIndex = 1) { // Reformulated for 2 columns and wrapping
-    if (games.length === 0) return;
+function renderGamesWithBalls(title, games, startIndex = 1, reportData = null) { // Reformulated for 2 columns and wrapping
+    // Limpar e validar dados dos jogos antes de renderizar
+    const cleanedGames = cleanGamesData(games);
+    
+    if (cleanedGames.length === 0) return;
     
     doc.addPage();
     y = margin;
@@ -208,21 +308,63 @@ function renderGamesWithBalls(title, games, startIndex = 1) { // Reformulated fo
                 currentBallY += ballItemWidth;
                 currentBallX = baseX + indexWidth;
             }
-            doc.setFillColor('#1e293b');
-            doc.circle(currentBallX + ballRadius, currentBallY + ballRadius + 3, ballRadius, 'F');
-            doc.setFontSize(6);
+            
+            // Determinar cor e estilo da bola
+            let fillColor = '#1e293b'; // Cor padrão (escura)
+            let textColor = '#ffffff';
+            let isFavorite = false;
+            let isUnused = false;
+            
+            if (reportData) {
+                const p = reportData.parametros;
+                
+                // Verificar se é favorita
+                if (p && p.favoritas && p.favoritas.includes(dezena)) {
+                    isFavorite = true;
+                }
+                
+                // Verificar se é bola não utilizada (não está na seleção do usuário)
+                if (p && p.selecaoUsuario && p.selecaoUsuario.dezenas && !p.selecaoUsuario.dezenas.includes(dezena)) {
+                    fillColor = '#9ca3af'; // Cinza para não utilizadas
+                    textColor = '#374151';
+                    isUnused = true;
+                }
+            }
+            
+            const ballX = currentBallX + ballRadius;
+            const ballY = currentBallY + ballRadius + 3;
+            
+            // Desenhar contorno especial para bolas favoritas
+            if (isFavorite && !isUnused) {
+                doc.setDrawColor('#f59e0b'); // Cor dourada para o contorno
+                doc.setLineWidth(1.5); // Contorno mais grosso
+                doc.circle(ballX, ballY, ballRadius, 'S'); // Só o contorno
+            }
+            
+            doc.setFillColor(fillColor);
+            doc.circle(ballX, ballY, ballRadius, 'F');
+            doc.setFontSize(8); // Aumentado de 6 para 8
             doc.setFont('helvetica', 'bold');
-            doc.setTextColor('#ffffff');
-            doc.text(String(dezena).padStart(2, '0'), currentBallX + ballRadius, currentBallY + ballRadius + 3, { align: 'center', baseline: 'middle' });
+            doc.setTextColor(textColor);
+            doc.text(String(dezena).padStart(2, '0'), ballX, ballY, { align: 'center', baseline: 'middle' });
+            
+            // Adicionar estrela para favoritas
+            if (isFavorite && !isUnused) {
+                doc.setFontSize(10); // Tamanho menor para jogos
+                doc.setTextColor('#f59e0b');
+                doc.setFont('helvetica', 'bold');
+                doc.text('*', ballX + ballRadius - 0.5, ballY - ballRadius + 1);
+            }
+            
             currentBallX += ballItemWidth;
         });
 
         return gameHeight;
     };
 
-    for (let i = 0; i < games.length; i += 2) {
-        const game1 = games[i];
-        const game2 = (i + 1 < games.length) ? games[i + 1] : null;
+    for (let i = 0; i < cleanedGames.length; i += 2) {
+        const game1 = cleanedGames[i];
+        const game2 = (i + 1 < cleanedGames.length) ? cleanedGames[i + 1] : null;
 
         let height1 = 0;
         let height2 = 0;
@@ -317,8 +459,23 @@ function generateReportBody(reportData) {
     drawTwoColumnList(paramsList, col2X, colWidth);
     const yCol2 = y;
 
+    // --- Informações de Cotas (se ativo) ---
+    let yCotasEnd = yCol2;
+    if (reportData.cotas && reportData.cotas.ativo) {
+        y = yCol2 + 5; // Pequeno espaço extra
+        drawSectionTitle('Informações de Cotas', col2X, colWidth);
+        const cotasList = [
+            { label: 'Quantidade de Cotas:', value: reportData.cotas.quantidadeCotas },
+            { label: 'Cotas Compradas:', value: reportData.cotas.cotasCompradas },
+            { label: 'Custo das Cotas Compradas:', value: reportData.cotas.custoTotalCotas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
+            { label: 'Taxa de 35% Aplicada:', value: reportData.cotas.pago35Caixa ? 'Sim' : 'Não' }
+        ];
+        drawTwoColumnList(cotasList, col2X, colWidth);
+        yCotasEnd = y;
+    }
+
     // --- Continua abaixo das colunas ---
-    y = Math.max(yCol1, yCol2);
+    y = Math.max(yCol1, yCotasEnd);
 
     // --- Painéis de Bolas ---
     if (p.aproveitouJogos) {
@@ -350,6 +507,50 @@ function generateReportBody(reportData) {
         { 
             newFromAproveitado: new Set(p.jogosAproveitadosInfo.dezenas),
             favorites: p.universoNovosJogos.tipo === 'selecao_usuario' ? new Set(p.favoritas) : new Set()
+        }
+    );
+    
+    // --- Painel de Todas as Bolas (Utilizadas vs Não Utilizadas) ---
+    // Determinar número de bolas baseado no tipo de jogo
+    let totalBalls = 60; // Default para Mega-Sena
+    if (p.tipoJogo) {
+        const gameType = p.tipoJogo.toLowerCase();
+        if (gameType === 'lotofacil') {
+            totalBalls = 25;
+        } else if (gameType === 'quina') {
+            totalBalls = 80;
+        } else if (gameType === 'megasena') {
+            totalBalls = 60;
+        }
+    }
+    
+    const allBalls = Array.from({length: totalBalls}, (_, i) => i + 1);
+    const usedBalls = new Set([...p.universoNovosJogos.dezenas, ...(p.jogosAproveitadosInfo?.dezenas || [])]);
+    const unusedBalls = new Set(allBalls.filter(ball => !usedBalls.has(ball)));
+    
+    let allBallsSubtitle = 'Todas as bolas disponíveis. ';
+    const allBallsLegend = [];
+    if (unusedBalls.size > 0) {
+        allBallsLegend.push('em cinza as não utilizadas');
+    }
+    if (p.favoritas.length > 0) {
+        allBallsLegend.push('com * as favoritas');
+    }
+    if (p.aproveitouJogos) {
+        allBallsLegend.push('em verde as dos jogos aproveitados');
+    }
+    if (allBallsLegend.length > 0) {
+        allBallsSubtitle += `(${allBallsLegend.join('; ')})`;
+    }
+    
+    drawBallPanel(
+        'Visão Geral - Todas as Bolas',
+        allBallsSubtitle,
+        allBalls,
+        { 
+            inactive: unusedBalls,
+            newFromAproveitado: new Set(p.jogosAproveitadosInfo?.dezenas || []),
+            favorites: new Set(p.favoritas || [])
         }
     );
 }
@@ -432,10 +633,16 @@ async function generateReportWithGamesPDF(reportData, allGames) {
     const jogosAproveitados = allGames.slice(0, reportData.jogosAproveitados);
     const novosJogos = allGames.slice(reportData.jogosAproveitados);
 
-    renderGamesWithBalls(`Jogos Aproveitados (${jogosAproveitados.length})`, jogosAproveitados);
-    renderGamesWithBalls(`Novos Jogos Gerados (${novosJogos.length})`, novosJogos, jogosAproveitados + 1);
+    renderGamesWithBalls(`Jogos Aproveitados (${jogosAproveitados.length})`, jogosAproveitados, 1, reportData);
+    renderGamesWithBalls(`Novos Jogos Gerados (${novosJogos.length})`, novosJogos, jogosAproveitados.length + 1, reportData);
 
     addHeaderAndFooter();
+    
+    // Adicionar frequência de bolas se disponível
+    if (reportData.frequenciaBolas && reportData.frequenciaBolas.length > 0) {
+        addBallFrequencySection(reportData.frequenciaBolas);
+    }
+    
     doc.save(`Relatorio_com_jogos_${reportData.jogosGerados}.pdf`);
 }
 

@@ -3,6 +3,7 @@ import { generateReportPDF, generateReportWithGamesPDF } from './reportPdf.js';
 import { aplicarConfiguracoesImpressao } from './printPdf.js';
 import { combinationsCount, calculateInternalRepetitions } from './utils.js';
 import { validateAndGetFileInfo } from './validators.js';
+import { formatCurrency } from './charts.js';
 
 /**
  * Inicializa a interface do usuário do LotoPro.
@@ -80,6 +81,8 @@ function initializeInterface() {
     populateCotasDropdown();
     populateGridSpacingDropdowns();
 
+    checkAndSetEmptyState(); // Checagem inicial
+
     handleGlobalGameTypeChange();
 }
 
@@ -125,40 +128,36 @@ function populateGridSpacingDropdowns() {
  * @returns {void}
  */
 function setupGenerationControls() {
-    const combinatoriaAleatoriaCheckbox = document.getElementById('geracaoCombinatoriaAleatoria');
-    const combinatoriaSequencialCheckbox = document.getElementById('geracaoCombinatoriaSequencial');
-    const aleatoriaCheckbox = document.getElementById('geracaoAleatoria');
+    const generationRadios = document.querySelectorAll('input[name="generationAlgorithm"]');
     const aproveitaJogosCheckbox = document.getElementById('aproveitaJogos');
     const usarPesoFavoritasCheckbox = document.getElementById('usarPesoFavoritas');
     const selectAllBtn = document.getElementById('btn-select-all-balls');
     const deselectAllBtn = document.getElementById('btn-deselect-all-balls');
     const randomSelector = document.getElementById('random-ball-selector');
     const convertToFavoriteBtn = document.getElementById('btn-convert-to-favorite');
-
-    const generationCheckboxes = [combinatoriaAleatoriaCheckbox, combinatoriaSequencialCheckbox, aleatoriaCheckbox];
-
-    generationCheckboxes.forEach(checkbox => {
-        if (checkbox) {
-            checkbox.addEventListener('change', () => {
-                if (checkbox.checked) {
-                    // Uncheck others
-                    generationCheckboxes.forEach(otherCheckbox => {
-                        if (otherCheckbox && otherCheckbox !== checkbox) {
-                            otherCheckbox.checked = false;
-                        }
-                    });
-                }
-                // Ensure at least one is checked. If user unchecks the last one, re-check it.
-                if (!generationCheckboxes.some(cb => cb && cb.checked)) {
-                    checkbox.checked = true;
-                }
-                updateGenerationInputsState();
-            });
-        }
-    });
+    generationRadios.forEach(radio => radio.addEventListener('change', updateGenerationInputsState));
 
     if (aproveitaJogosCheckbox) {
         aproveitaJogosCheckbox.addEventListener('change', updateGenerationInputsState);
+        
+        // Event listener adicional para garantir que as opções apareçam corretamente
+        aproveitaJogosCheckbox.addEventListener('change', function() {
+            const aproveitarOptions = document.getElementById('aproveitar-options');
+            if (aproveitarOptions) {
+                if (this.checked) {
+                    aproveitarOptions.style.display = 'block';
+                    // Forçar recalculo da altura da seção colapsável se necessário
+                    const collapsibleContent = aproveitarOptions.closest('.collapsible-content');
+                    if (collapsibleContent && collapsibleContent.classList.contains('active')) {
+                        setTimeout(() => {
+                            collapsibleContent.style.maxHeight = collapsibleContent.scrollHeight + 'px';
+                        }, 50);
+                    }
+                } else {
+                    aproveitarOptions.style.display = 'none';
+                }
+            }
+        });
     }
 
     if (usarPesoFavoritasCheckbox) {
@@ -239,6 +238,24 @@ function setupGenerationControls() {
         }
         if (prizeFreqModal && event.target == prizeFreqModal) {
             prizeFreqModal.style.display = 'none';
+        }
+    });
+}
+
+/**
+ * Checks if the managed game lists are empty and displays a placeholder message.
+ */
+function checkAndSetEmptyState() {
+    const lists = [
+        { container: document.getElementById('generation-file-list'), message: 'Nenhum jogo na lista. Gere ou adicione um arquivo para começar.' },
+        { container: document.getElementById('analise-file-list'), message: 'Nenhum jogo na lista. Adicione um arquivo para começar a análise.' }
+    ];
+
+    lists.forEach(({ container, message }) => {
+        if (container && container.children.length === 0) {
+            container.innerHTML = `<div class="empty-state-message">${message}</div>`;
+        } else if (container && container.querySelector('.empty-state-message')) {
+            container.querySelector('.empty-state-message').remove();
         }
     });
 }
@@ -447,12 +464,12 @@ const rules = {
 function updateCombinatorialGenerationState() {
     const selectedBallsCount = document.querySelectorAll('#ball-selection-panel .ball.active').length;
     const dezenasJogadas = parseInt(document.getElementById('dezenasJogadas').value, 10);
-    const combinatoriaAleatoriaCheckbox = document.getElementById('geracaoCombinatoriaAleatoria');
-    const combinatoriaSequencialCheckbox = document.getElementById('geracaoCombinatoriaSequencial');
+    const combinatoriaAleatoriaRadio = document.getElementById('geracaoCombinatoriaAleatoria');
+    const combinatoriaSequencialRadio = document.getElementById('geracaoCombinatoriaSequencial');
 
-    if (!combinatoriaAleatoriaCheckbox || !combinatoriaSequencialCheckbox || isNaN(dezenasJogadas) || selectedBallsCount < dezenasJogadas) {
-        if (combinatoriaAleatoriaCheckbox) combinatoriaAleatoriaCheckbox.disabled = true;
-        if (combinatoriaSequencialCheckbox) combinatoriaSequencialCheckbox.disabled = true;
+    if (!combinatoriaAleatoriaRadio || !combinatoriaSequencialRadio || isNaN(dezenasJogadas) || selectedBallsCount < dezenasJogadas) {
+        if (combinatoriaAleatoriaRadio) combinatoriaAleatoriaRadio.disabled = true;
+        if (combinatoriaSequencialRadio) combinatoriaSequencialRadio.disabled = true;
         return;
     }
 
@@ -463,28 +480,28 @@ function updateCombinatorialGenerationState() {
 
     // Lógica para Combinatória Aleatória
     if (totalCombinations > COMBINATION_MEMORY_LIMIT) {
-        combinatoriaAleatoriaCheckbox.disabled = true;
-        combinatoriaAleatoriaCheckbox.checked = false;
-        combinatoriaAleatoriaCheckbox.parentElement.title = `Muitas combinações (${totalCombinations.toLocaleString('pt-BR')}) para este método. Use "Combinatória em Sequência" ou "Geração Aleatória".`;
+        combinatoriaAleatoriaRadio.disabled = true;
+        if (combinatoriaAleatoriaRadio.checked) combinatoriaAleatoriaRadio.checked = false;
+        combinatoriaAleatoriaRadio.parentElement.title = `Muitas combinações (${totalCombinations.toLocaleString('pt-BR')}) para este método. Use "Combinatória em Sequência" ou "Geração Aleatória".`;
     } else {
-        combinatoriaAleatoriaCheckbox.disabled = false;
-        combinatoriaAleatoriaCheckbox.parentElement.title = '';
+        combinatoriaAleatoriaRadio.disabled = false;
+        combinatoriaAleatoriaRadio.parentElement.title = '';
     }
 
     // Lógica para Combinatória Sequencial
     if (totalCombinations > COMBINATION_LIMIT) {
-        combinatoriaSequencialCheckbox.disabled = true;
-        combinatoriaSequencialCheckbox.checked = false;
-        combinatoriaSequencialCheckbox.parentElement.title = `Muitas combinações (${totalCombinations.toLocaleString('pt-BR')}). Use "Geração Aleatória".`;
+        combinatoriaSequencialRadio.disabled = true;
+        if (combinatoriaSequencialRadio.checked) combinatoriaSequencialRadio.checked = false;
+        combinatoriaSequencialRadio.parentElement.title = `Muitas combinações (${totalCombinations.toLocaleString('pt-BR')}). Use "Geração Aleatória".`;
     } else {
-        combinatoriaSequencialCheckbox.disabled = false;
-        combinatoriaSequencialCheckbox.parentElement.title = '';
+        combinatoriaSequencialRadio.disabled = false;
+        combinatoriaSequencialRadio.parentElement.title = '';
     }
 
     // Garante que pelo menos uma opção de geração esteja marcada se as outras forem desabilitadas
-    const generationCheckboxes = [combinatoriaAleatoriaCheckbox, combinatoriaSequencialCheckbox, document.getElementById('geracaoAleatoria')];
-    if (!generationCheckboxes.some(cb => cb.checked)) {
-        const firstEnabled = generationCheckboxes.find(cb => !cb.disabled);
+    const generationRadios = [combinatoriaAleatoriaRadio, combinatoriaSequencialRadio, document.getElementById('geracaoAleatoria')];
+    if (!generationRadios.some(cb => cb.checked)) {
+        const firstEnabled = generationRadios.find(cb => !cb.disabled);
         if (firstEnabled) firstEnabled.checked = true;
     }
 }
@@ -752,9 +769,8 @@ function updateGenerationInputsState() {
     const usarPesoFavoritasCheckbox = document.getElementById('usarPesoFavoritas');
     const pesoFavoritasOptions = document.getElementById('peso-favoritas-options');
     const aproveitaJogosCheckbox = document.getElementById('aproveitaJogos');
-    const aproveitarOptions = document.getElementById('aproveitar-options');
 
-    if (!combinatoriaAleatoriaCheckbox || !combinatoriaSequencialCheckbox || !aleatoriaCheckbox || !aleatorioOptions || !aproveitaJogosCheckbox || !aproveitarOptions || !usarPesoFavoritasCheckbox || !pesoFavoritasOptions) {
+    if (!combinatoriaAleatoriaCheckbox || !combinatoriaSequencialCheckbox || !aleatoriaCheckbox || !aleatorioOptions || !aproveitaJogosCheckbox || !usarPesoFavoritasCheckbox || !pesoFavoritasOptions) {
         console.warn("Alguns elementos de controle não foram encontrados para atualizar estado.");
         return;
     }
@@ -774,12 +790,8 @@ function updateGenerationInputsState() {
         pesoFavoritasOptions.style.display = 'none';
     }
 
-    // Lógica para aproveitar jogos
-    if (aproveitaJogosCheckbox.checked) {
-        aproveitarOptions.style.display = 'block';
-    } else {
-        aproveitarOptions.style.display = 'none';
-    }
+    // A lógica para aproveitar jogos agora é controlada pela função updateExternalGamesCheckboxes()
+    // que é chamada quando necessário
 }
 
 /**
@@ -868,7 +880,7 @@ export async function addManagedGame(source) {
     if (!genListContainer || !fileListContainer) return;
 
     if (Object.keys(window.managedGames).length >= 20) {
-        alert('Você pode adicionar no máximo 20 arquivos.');
+        showNotification('status-geracao', 'Você pode adicionar no máximo 20 arquivos.', 'warning');
         return;
     }
 
@@ -884,10 +896,8 @@ export async function addManagedGame(source) {
             const currentGameLabel = gameTypeRules[currentGameType]?.label;
 
             if (fileInfo.inferredTypes.length > 0 && !fileInfo.inferredTypes.includes(currentGameLabel)) {
-                const confirmation = confirm(`Este jogo parece ser do tipo "${fileInfo.inferredTypes.join(' / ')}", que é diferente do tipo selecionado ("${currentGameLabel}"). Deseja adicioná-lo mesmo assim?`);
-                if (!confirmation) {
-                    return; // Para de adicionar o jogo
-                }
+                const statusId = document.querySelector('.tab-content.active').id === 'geracao' ? 'status-geracao' : 'status-analise';
+                showNotification(statusId, `Aviso: O arquivo "${source.name}" parece ser do tipo "${fileInfo.inferredTypes.join(' / ')}", diferente do selecionado.`, 'warning');
             }
 
             const repetitionGroupSizes = [2, 3, 4, 5, 6, 11, 12, 13, 14, 15];
@@ -901,10 +911,46 @@ export async function addManagedGame(source) {
             const gameTypeRules = { megasena: { label: 'MegaSena' }, quina: { label: 'Quina' }, lotofacil: { label: 'Lotofácil' } };
             const inferredTypes = [gameTypeRules[currentGameType]?.label || 'Desconhecido'];
 
-            itemData = { ...source, id: gameId, type: 'generated', games: source.allGames, uniqueBalls: uniqueBalls, inferredTypes: inferredTypes, repetitionCounts: repetitionCounts };
+            // Coletar informações de cotas se estiverem ativas
+            let quotaInfo = null;
+            
+            // Primeiro, verificar se já existe informação de cotas no reportData
+            if (source.reportData && source.reportData.cotas && source.reportData.cotas.ativo) {
+                quotaInfo = {
+                    ativo: source.reportData.cotas.ativo,
+                    quantidadeCotas: source.reportData.cotas.quantidadeCotas,
+                    cotasCompradas: source.reportData.cotas.cotasCompradas,
+                    pago35Caixa: source.reportData.cotas.pago35Caixa,
+                    custoTotalCotas: source.reportData.cotas.custoTotalCotas
+                };
+            } else {
+                // Fallback: coletar das informações da interface (caso não esteja no reportData)
+                const calcularCotasCheckbox = document.getElementById('calcularCotas');
+                if (calcularCotasCheckbox && calcularCotasCheckbox.checked) {
+                    const quantidadeCotas = parseInt(document.getElementById('quantidadeCotas').value) || 1;
+                    const cotasCompradas = parseInt(document.getElementById('cotasCompradas').value) || 1;
+                    const pago35Caixa = document.getElementById('pago35Caixa').checked;
+                    
+                    // Usar o custo total do reportData se disponível
+                    const custoTotalCotas = source.reportData?.custoTotal || 0;
+                    
+                    quotaInfo = {
+                        ativo: true,
+                        quantidadeCotas: quantidadeCotas,
+                        cotasCompradas: cotasCompradas,
+                        pago35Caixa: pago35Caixa,
+                        custoTotalCotas: custoTotalCotas
+                    };
+                }
+            }
+
+            itemData = { ...source, id: gameId, type: 'generated', games: source.allGames, uniqueBalls: uniqueBalls, inferredTypes: inferredTypes, repetitionCounts: repetitionCounts, quotaInfo: quotaInfo };
         }
 
         window.managedGames[gameId] = itemData;
+
+        // Antes de adicionar, remove a mensagem de "estado vazio" se existir
+        checkAndSetEmptyState();
 
         // Renderiza o item em ambas as listas
         const genItem = createManagedGameItem(itemData, 'generation');
@@ -916,8 +962,12 @@ export async function addManagedGame(source) {
         // Aplica o filtro e atualiza o conteúdo dos itens recém-criados
         filterAndRefreshManagedGamesList(currentGameType);
 
+        // Atualiza o estado dos checkboxes de jogos externos
+        updateExternalGamesCheckboxes();
+
     } catch (error) {
-        alert(`Erro ao adicionar jogo: ${error.message}`);
+        const statusId = document.querySelector('.tab-content.active').id === 'geracao' ? 'status-geracao' : 'status-analise';
+        showNotification(statusId, `Erro ao adicionar jogo: ${error.message}`, 'error');
     }
 }
 
@@ -935,9 +985,44 @@ function _createManagedGameItemHTML(itemData, context) {
 
     const ballInfoString = `<div class="detail-line"><i class="fas fa-globe detail-icon"></i> <b>Bolas (${itemData.uniqueBalls.length}):</b> ${itemData.uniqueBalls.join(', ')}</div>`;
 
+    // Informações das cotas
+    let cotasInfoString = '';
+    if (itemData.quotaInfo && itemData.quotaInfo.ativo) {
+        // Custo total real dos jogos (sem divisão por cotas)
+        const custoTotalReal = itemData.reportData?.custoTotal || itemData.quotaInfo.custoTotalCotas;
+        
+        // Valor de cada cota individual
+        const valorPorCota = custoTotalReal / itemData.quotaInfo.quantidadeCotas;
+        
+        // Valor que o usuário deve pagar pelas suas cotas
+        const valorTotalUsuario = valorPorCota * itemData.quotaInfo.cotasCompradas;
+        
+        // Valor pago (135% se a opção estiver marcada, senão 100% do valor das cotas)
+        const valorPago = itemData.quotaInfo.pago35Caixa ? 
+            valorTotalUsuario * 1.35 : 
+            valorTotalUsuario;
+        
+        cotasInfoString = `
+            <div class="detail-line" style="background-color: rgba(74, 144, 226, 0.1); padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;">
+                <i class="fas fa-calculator detail-icon" style="color: #4a90e2;"></i> 
+                <b>Cotas:</b> ${itemData.quotaInfo.quantidadeCotas}x com ${itemData.quotaInfo.cotasCompradas} comprada(s)
+                <br><span style="margin-left: 1.2rem; font-size: 0.9em;">
+                    Custo Total: ${formatCurrency(custoTotalReal)} | 
+                    Valor Pago: ${formatCurrency(valorPago)}
+                    ${itemData.quotaInfo.pago35Caixa ? ' (35% antecipado)' : ''}
+                </span>
+            </div>`;
+    }
+
     const reportButtonHTML = (context === 'generation' && isGenerated)
-        ? `<button class="btn-show-report" title="Exibir Relatório"><i class="fas fa-eye"></i></button>`
+        ? `<button class="btn btn-secondary btn-show-report" title="Visualizar Relatório de Geração" style="margin-right: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.8rem;">
+               <i class="fas fa-chart-bar"></i> Visualizar Relatório de Geração
+           </button>`
         : '';
+
+    const deleteButtonHTML = `<button class="btn btn-danger delete-btn" title="Excluir" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
+        <i class="fas fa-trash"></i> Excluir
+    </button>`;
 
     const addBallsButtonHTML = (context === 'analysis')
         ? `<button class="btn btn-ghost btn-add-balls" data-file-id="${itemData.id}" style="margin-top: 0.5rem; width: 100%; font-size: 0.75rem; padding: 0.5rem;">
@@ -950,13 +1035,16 @@ function _createManagedGameItemHTML(itemData, context) {
             <input type="checkbox" checked title="Incluir este jogo na análise/aproveitamento">
             <i class="fas ${iconClass}" style="margin-right: 8px; color: var(--primary-color);"></i>
             <span class="file-name">${itemData.name}</span>
-            ${reportButtonHTML}
-            <button class="delete-btn" title="Remover item"><i class="fas fa-times"></i></button>
+            <div class="action-buttons" style="margin-left: auto; display: flex; gap: 0.5rem;">
+                ${reportButtonHTML}
+                ${deleteButtonHTML}
+            </div>
         </div>
         <div class="file-item-details-frame">
             <div class="detail-line game-types"></div>
             <div class="detail-line repetitions" style="display: none;"></div>
             ${ballInfoString}
+            ${cotasInfoString}
         </div>
         ${addBallsButtonHTML}
     `;
@@ -970,11 +1058,22 @@ function _createManagedGameItemHTML(itemData, context) {
  * @private
  */
 function _attachManagedGameItemListeners(itemWrapper, itemData, context) {
-    itemWrapper.querySelector('.delete-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        const event = new CustomEvent('deleteManagedGame', { detail: { id: itemData.id } });
-        document.dispatchEvent(event);
-    });
+    const deleteBtn = itemWrapper.querySelector('.delete-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const event = new CustomEvent('deleteManagedGame', { detail: { id: itemData.id } });
+            document.dispatchEvent(event);
+        });
+    }
+
+    // Adicionar listener para o checkbox de seleção
+    const checkbox = itemWrapper.querySelector('input[type="checkbox"]');
+    if (checkbox && context === 'generation') {
+        checkbox.addEventListener('change', () => {
+            updateExternalGamesCheckboxes();
+        });
+    }
 
     if (context === 'generation' && itemData.type === 'generated') {
         const reportButton = itemWrapper.querySelector('.btn-show-report');
@@ -1093,6 +1192,21 @@ function showGenerationReport(reportData, workbook, filename) {
         <div>Aproveitou Jogos: <b>${params.aproveitouJogos ? 'Sim' : 'Não'}</b></div>
         ${params.interrompido ? `<div>Status: <b style="color: var(--danger-color);">Interrompido pelo usuário</b></div>` : ''}
     `;
+
+    // Popula as informações de cotas se estiver ativo
+    const cotasSection = document.getElementById('report-cotas-section');
+    const cotasContainer = document.getElementById('report-cotas-content');
+    if (reportData.cotas && reportData.cotas.ativo) {
+        cotasContainer.innerHTML = `
+            <div>Quantidade de Cotas: <b>${reportData.cotas.quantidadeCotas}</b></div>
+            <div>Cotas Compradas: <b>${reportData.cotas.cotasCompradas}</b></div>
+            <div>Custo das Cotas Compradas: <b>${reportData.cotas.custoTotalCotas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b></div>
+            <div>Taxa de 35% Aplicada: <b>${reportData.cotas.pago35Caixa ? 'Sim' : 'Não'}</b></div>
+        `;
+        cotasSection.style.display = 'block';
+    } else {
+        cotasSection.style.display = 'none';
+    }
 
     // Detalhes dos Jogos Aproveitados
     const aproveitadosContainer = document.getElementById('report-aproveitados-details');
@@ -1221,4 +1335,854 @@ function showNotification(elementId, message, type = 'info') {
     }
 }
 
-export { initializeInterface, handleGlobalGameTypeChange, updateGenerationInputsState, showGenerationReport, showNotification, createSimulationBallPanel, updateSimulationBallPanelStats };
+/**
+ * Exibe um skeleton loader em um elemento específico.
+ * @function showSkeletonLoader
+ * @param {string} elementId - ID do elemento onde exibir o skeleton
+ * @param {string} [type='card'] - Tipo do skeleton (card, text, button, ball)
+ * @param {number} [count=1] - Quantidade de elementos skeleton
+ * @returns {void}
+ */
+function showSkeletonLoader(elementId, type = 'card', count = 1) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    let skeletonHTML = '';
+    
+    for (let i = 0; i < count; i++) {
+        switch (type) {
+            case 'text':
+                skeletonHTML += `
+                    <div class="skeleton skeleton-text short"></div>
+                    <div class="skeleton skeleton-text medium"></div>
+                    <div class="skeleton skeleton-text long"></div>
+                `;
+                break;
+            case 'button':
+                skeletonHTML += `<div class="skeleton skeleton-button"></div>`;
+                break;
+            case 'ball':
+                skeletonHTML += `<div class="skeleton skeleton-ball"></div>`;
+                break;
+            case 'card':
+            default:
+                skeletonHTML += `<div class="skeleton skeleton-card"></div>`;
+                break;
+        }
+    }
+    
+    element.innerHTML = skeletonHTML;
+    element.style.display = 'block';
+}
+
+/**
+ * Remove o skeleton loader e restaura o conteúdo original.
+ * @function hideSkeletonLoader
+ * @param {string} elementId - ID do elemento
+ * @returns {void}
+ */
+function hideSkeletonLoader(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.innerHTML = '';
+        element.style.display = 'none';
+    }
+}
+
+/**
+ * Define o estado de loading de um botão.
+ * @function setButtonLoading
+ * @param {string} buttonId - ID do botão
+ * @param {boolean} isLoading - Se deve exibir estado de loading
+ * @param {string} [loadingText='Carregando...'] - Texto a exibir durante loading
+ * @returns {void}
+ */
+function setButtonLoading(buttonId, isLoading, loadingText = 'Carregando...') {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+
+    if (isLoading) {
+        button.dataset.originalText = button.textContent;
+        button.classList.add('btn-loading');
+        button.disabled = true;
+    } else {
+        button.classList.remove('btn-loading');
+        button.disabled = false;
+        if (button.dataset.originalText) {
+            button.textContent = button.dataset.originalText;
+            delete button.dataset.originalText;
+        }
+    }
+}
+
+/**
+ * Exibe um indicador de progresso avançado.
+ * @function showEnhancedProgress
+ * @param {string} containerId - ID do container
+ * @param {number} progress - Progresso de 0 a 100
+ * @param {string} [message=''] - Mensagem de status
+ * @returns {void}
+ */
+function showEnhancedProgress(containerId, progress, message = '') {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const progressHTML = `
+        <div class="loader-enhanced">
+            <div class="spinner"></div>
+            <div>
+                <div style="font-weight: 500; margin-bottom: 0.5rem;">${message}</div>
+                <div class="progress-enhanced">
+                    <div class="progress-bar" style="width: ${progress}%"></div>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
+                    ${progress}% concluído
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.innerHTML = progressHTML;
+    container.style.display = 'block';
+}
+
+/**
+ * Exibe um loader com dots animados.
+ * @function showDotsLoader
+ * @param {string} elementId - ID do elemento
+ * @param {string} [message='Processando'] - Mensagem a exibir
+ * @returns {void}
+ */
+function showDotsLoader(elementId, message = 'Processando') {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    const loaderHTML = `
+        <div class="loader-enhanced">
+            <div class="dots-loader">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+            <span>${message}</span>
+        </div>
+    `;
+    
+    element.innerHTML = loaderHTML;
+    element.style.display = 'block';
+}
+
+/**
+ * Exibe uma notificação de status aprimorada.
+ * @function showEnhancedNotification
+ * @param {string} elementId - ID do elemento
+ * @param {string} message - Mensagem
+ * @param {string} [type='info'] - Tipo (info, success, warning, error)
+ * @param {number} [duration=0] - Duração em ms (0 = não remove automaticamente)
+ * @returns {void}
+ */
+function showEnhancedNotification(elementId, message, type = 'info', duration = 0) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    const icons = {
+        info: 'fas fa-info-circle',
+        success: 'fas fa-check-circle',
+        warning: 'fas fa-exclamation-triangle',
+        error: 'fas fa-times-circle'
+    };
+
+    const notificationHTML = `
+        <div class="status-message-enhanced ${type}">
+            <i class="${icons[type]}"></i>
+            <span>${message}</span>
+        </div>
+    `;
+    
+    element.innerHTML = notificationHTML;
+    element.style.display = 'block';
+
+    if (duration > 0) {
+        setTimeout(() => {
+            element.style.display = 'none';
+        }, duration);
+    }
+}
+
+// === Breadcrumbs System ===
+class BreadcrumbManager {
+    constructor() {
+        this.breadcrumbs = [];
+        this.currentSection = 'dashboard';
+        this.init();
+    }
+
+    init() {
+        this.updateBreadcrumb(this.currentSection);
+        this.updateCurrentContext(this.currentSection);
+    }
+
+    updateBreadcrumb(section) {
+        const breadcrumbContainer = document.querySelector('.breadcrumb');
+        if (!breadcrumbContainer) return;
+
+        this.currentSection = section;
+        const breadcrumbMap = {
+            'dashboard': ['Dashboard'],
+            'generator': ['Dashboard', 'Gerador de Jogos'],
+            'analyzer': ['Dashboard', 'Análise de Jogos'],
+            'statistics': ['Dashboard', 'Estatísticas'],
+            'history': ['Dashboard', 'Histórico'],
+            'settings': ['Dashboard', 'Configurações']
+        };
+
+        const items = breadcrumbMap[section] || ['Dashboard'];
+        
+        breadcrumbContainer.innerHTML = items.map((item, index) => {
+            const isLast = index === items.length - 1;
+            const itemClass = isLast ? 'breadcrumb-item active' : 'breadcrumb-item';
+            const onClick = isLast ? '' : `onclick="window.breadcrumbManager.navigateToSection('${this.getSectionFromName(item)}')"`;
+            
+            return `
+                <span class="${itemClass}" ${onClick}>
+                    <i class="${this.getIconForSection(item)}"></i>
+                    ${item}
+                </span>
+                ${!isLast ? '<i class="fas fa-chevron-right breadcrumb-separator"></i>' : ''}
+            `;
+        }).join('');
+
+        this.updateCurrentContext(section);
+    }
+
+    getSectionFromName(name) {
+        const nameMap = {
+            'Dashboard': 'dashboard',
+            'Gerador de Jogos': 'generator',
+            'Análise de Jogos': 'analyzer',
+            'Estatísticas': 'statistics',
+            'Histórico': 'history',
+            'Configurações': 'settings'
+        };
+        return nameMap[name] || 'dashboard';
+    }
+
+    getIconForSection(name) {
+        const iconMap = {
+            'Dashboard': 'fas fa-home',
+            'Gerador de Jogos': 'fas fa-dice',
+            'Análise de Jogos': 'fas fa-chart-line',
+            'Estatísticas': 'fas fa-chart-bar',
+            'Histórico': 'fas fa-history',
+            'Configurações': 'fas fa-cog'
+        };
+        return iconMap[name] || 'fas fa-home';
+    }
+
+    updateCurrentContext(section) {
+        const contextElement = document.querySelector('.current-context');
+        if (!contextElement) return;
+
+        const contextMap = {
+            'dashboard': 'Visão Geral',
+            'generator': 'Gerando Jogos',
+            'analyzer': 'Analisando Resultados',
+            'statistics': 'Visualizando Dados',
+            'history': 'Navegando Histórico',
+            'settings': 'Configurações do Sistema'
+        };
+
+        const contextText = contextMap[section] || 'Navegando';
+        contextElement.innerHTML = `
+            <i class="fas fa-map-marker-alt"></i>
+            <span>${contextText}</span>
+        `;
+    }
+
+    navigateToSection(section) {
+        // Ativar a aba correspondente
+        const tabButton = document.querySelector(`[data-tab="${section}"]`);
+        if (tabButton) {
+            tabButton.click();
+        }
+        
+        this.updateBreadcrumb(section);
+    }
+}
+
+// === Wizard System for New Users ===
+class WizardSystem {
+    constructor() {
+        this.currentStep = 0;
+        this.steps = [
+            {
+                title: 'Bem-vindo ao LotoPro!',
+                content: 'Vamos configurar sua experiência personalizada.',
+                target: '.sidebar',
+                position: 'right'
+            },
+            {
+                title: 'Gerador de Jogos',
+                content: 'Aqui você pode gerar jogos inteligentes baseados em análises.',
+                target: '[data-tab="generator"]',
+                position: 'bottom'
+            },
+            {
+                title: 'Análise de Jogos',
+                content: 'Analise seus jogos e veja estatísticas detalhadas.',
+                target: '[data-tab="analyzer"]',
+                position: 'bottom'
+            },
+            {
+                title: 'Configurações',
+                content: 'Personalize suas preferências e estratégias.',
+                target: '[data-tab="settings"]',
+                position: 'bottom'
+            }
+        ];
+        this.isActive = false;
+    }
+
+    start() {
+        if (this.hasSeenWizard()) return;
+        
+        this.isActive = true;
+        this.currentStep = 0;
+        this.createWizardOverlay();
+        this.showStep(0);
+    }
+
+    hasSeenWizard() {
+        return localStorage.getItem('lotopro_wizard_completed') === 'true';
+    }
+
+    createWizardOverlay() {
+        const overlay = document.createElement('div');
+        overlay.className = 'wizard-overlay';
+        overlay.innerHTML = `
+            <div class="wizard-tooltip">
+                <div class="wizard-header">
+                    <h3 class="wizard-title"></h3>
+                    <button class="wizard-close" onclick="window.wizardSystem.close()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="wizard-content"></div>
+                <div class="wizard-footer">
+                    <button class="wizard-btn wizard-prev" onclick="window.wizardSystem.prevStep()">
+                        <i class="fas fa-chevron-left"></i> Anterior
+                    </button>
+                    <div class="wizard-progress">
+                        <span class="wizard-step-counter"></span>
+                    </div>
+                    <button class="wizard-btn wizard-next" onclick="window.wizardSystem.nextStep()">
+                        Próximo <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+    }
+
+    showStep(stepIndex) {
+        if (stepIndex < 0 || stepIndex >= this.steps.length) return;
+        
+        this.currentStep = stepIndex;
+        const step = this.steps[stepIndex];
+        const tooltip = document.querySelector('.wizard-tooltip');
+        const overlay = document.querySelector('.wizard-overlay');
+        
+        if (!tooltip || !overlay) return;
+
+        // Atualizar conteúdo
+        tooltip.querySelector('.wizard-title').textContent = step.title;
+        tooltip.querySelector('.wizard-content').textContent = step.content;
+        tooltip.querySelector('.wizard-step-counter').textContent = `${stepIndex + 1} de ${this.steps.length}`;
+        
+        // Atualizar botões
+        const prevBtn = tooltip.querySelector('.wizard-prev');
+        const nextBtn = tooltip.querySelector('.wizard-next');
+        
+        prevBtn.style.visibility = stepIndex === 0 ? 'hidden' : 'visible';
+        nextBtn.textContent = stepIndex === this.steps.length - 1 ? 'Finalizar' : 'Próximo ';
+        if (stepIndex < this.steps.length - 1) {
+            nextBtn.innerHTML = 'Próximo <i class="fas fa-chevron-right"></i>';
+        }
+
+        // Posicionar tooltip
+        this.positionTooltip(step.target, step.position);
+        
+        // Destacar elemento alvo
+        this.highlightTarget(step.target);
+    }
+
+    positionTooltip(target, position) {
+        const targetElement = document.querySelector(target);
+        const tooltip = document.querySelector('.wizard-tooltip');
+        
+        if (!targetElement || !tooltip) return;
+
+        const targetRect = targetElement.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        
+        let top, left;
+        
+        switch (position) {
+            case 'right':
+                top = targetRect.top + (targetRect.height / 2) - (tooltipRect.height / 2);
+                left = targetRect.right + 20;
+                break;
+            case 'bottom':
+                top = targetRect.bottom + 20;
+                left = targetRect.left + (targetRect.width / 2) - (tooltipRect.width / 2);
+                break;
+            case 'left':
+                top = targetRect.top + (targetRect.height / 2) - (tooltipRect.height / 2);
+                left = targetRect.left - tooltipRect.width - 20;
+                break;
+            default: // top
+                top = targetRect.top - tooltipRect.height - 20;
+                left = targetRect.left + (targetRect.width / 2) - (tooltipRect.width / 2);
+        }
+        
+        // Manter dentro da viewport
+        top = Math.max(20, Math.min(top, window.innerHeight - tooltipRect.height - 20));
+        left = Math.max(20, Math.min(left, window.innerWidth - tooltipRect.width - 20));
+        
+        tooltip.style.top = `${top}px`;
+        tooltip.style.left = `${left}px`;
+    }
+
+    highlightTarget(target) {
+        // Remover highlight anterior
+        document.querySelectorAll('.wizard-highlight').forEach(el => {
+            el.classList.remove('wizard-highlight');
+        });
+        
+        // Adicionar novo highlight
+        const targetElement = document.querySelector(target);
+        if (targetElement) {
+            targetElement.classList.add('wizard-highlight');
+        }
+    }
+
+    nextStep() {
+        if (this.currentStep < this.steps.length - 1) {
+            this.showStep(this.currentStep + 1);
+        } else {
+            this.complete();
+        }
+    }
+
+    prevStep() {
+        if (this.currentStep > 0) {
+            this.showStep(this.currentStep - 1);
+        }
+    }
+
+    complete() {
+        localStorage.setItem('lotopro_wizard_completed', 'true');
+        this.close();
+        showEnhancedNotification('Configuração concluída! Aproveite o LotoPro.', 'success');
+    }
+
+    close() {
+        this.isActive = false;
+        const overlay = document.querySelector('.wizard-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+        
+        // Remover highlights
+        document.querySelectorAll('.wizard-highlight').forEach(el => {
+            el.classList.remove('wizard-highlight');
+        });
+    }
+}
+
+// Instanciar os sistemas
+const breadcrumbManager = new BreadcrumbManager();
+const wizardSystem = new WizardSystem();
+
+// Disponibilizar globalmente para uso em onclick
+window.breadcrumbManager = breadcrumbManager;
+window.wizardSystem = wizardSystem;
+
+// === Collapsible Sections ===
+function toggleCollapsible(header) {
+    const content = header.nextElementSibling;
+    const section = header.parentElement;
+    const icon = header.querySelector('.collapsible-icon');
+    
+    // Toggle classes
+    header.classList.toggle('active');
+    content.classList.toggle('active');
+    
+    // Update max-height for smooth animation
+    if (content.classList.contains('active')) {
+        content.style.maxHeight = content.scrollHeight + 'px';
+        
+        // Após expandir, aguardar a animação e atualizar estados
+        setTimeout(() => {
+            // Verificar se esta seção contém o aproveitamento de jogos
+            const aproveitaCheckbox = content.querySelector('#aproveitaJogos');
+            if (aproveitaCheckbox) {
+                // Forçar atualização do estado das opções de aproveitamento
+                updateGenerationInputsState();
+            }
+        }, 300); // Aguardar fim da animação CSS (300ms)
+    } else {
+        content.style.maxHeight = '0px';
+    }
+    
+    // Save state to localStorage
+    const sectionId = section.id || header.querySelector('.collapsible-title span').textContent;
+    const isExpanded = content.classList.contains('active');
+    localStorage.setItem(`collapsible_${sectionId}`, isExpanded);
+}
+
+// Initialize collapsible sections on load
+function initializeCollapsibleSections() {
+    document.querySelectorAll('.collapsible-section').forEach((section, index) => {
+        const header = section.querySelector('.collapsible-header');
+        const content = section.querySelector('.collapsible-content');
+        const sectionId = section.id || header.querySelector('.collapsible-title span').textContent;
+        
+        // Check saved state
+        const savedState = localStorage.getItem(`collapsible_${sectionId}`);
+        const shouldExpand = savedState === 'true';
+        
+        if (shouldExpand) {
+            header.classList.add('active');
+            content.classList.add('active');
+            content.style.maxHeight = content.scrollHeight + 'px';
+            
+            // Se esta seção contém o aproveitamento de jogos, atualizar estado
+            const aproveitaCheckbox = content.querySelector('#aproveitaJogos');
+            if (aproveitaCheckbox) {
+                // Aguardar um pouco para garantir que todos os elementos estejam prontos
+                setTimeout(() => {
+                    updateGenerationInputsState();
+                }, 100);
+            }
+        }
+    });
+}
+
+// Make functions available globally
+window.toggleCollapsible = toggleCollapsible;
+window.showKeyboardShortcutsHelp = showKeyboardShortcutsHelp;
+
+// Initialize on DOM load
+document.addEventListener('DOMContentLoaded', () => {
+    initializeCollapsibleSections();
+    initializeKeyboardShortcuts();
+});
+
+// === Keyboard Shortcuts System ===
+function initializeKeyboardShortcuts() {
+    const shortcuts = {
+        'ctrl+g': () => {
+            const generateBtn = document.getElementById('btn-gerar-jogos');
+            if (generateBtn && !generateBtn.disabled) {
+                generateBtn.click();
+                showEnhancedNotification('Gerando jogos via atalho Ctrl+G', 'info', 2000);
+            }
+        },
+        'ctrl+a': (e) => {
+            e.preventDefault();
+            const analyzeBtn = document.getElementById('btn-executar-analise');
+            if (analyzeBtn && !analyzeBtn.disabled) {
+                analyzeBtn.click();
+                showEnhancedNotification('Executando análise via atalho Ctrl+A', 'info', 2000);
+            }
+        },
+        'ctrl+s': (e) => {
+            e.preventDefault();
+            const saveBtn = document.getElementById('btn-salvar-excel');
+            if (saveBtn && !saveBtn.disabled) {
+                saveBtn.click();
+                showEnhancedNotification('Salvando Excel via atalho Ctrl+S', 'info', 2000);
+            }
+        },
+        'ctrl+p': (e) => {
+            e.preventDefault();
+            const printBtn = document.getElementById('btn-gerar-pdf');
+            if (printBtn && !printBtn.disabled) {
+                printBtn.click();
+                showEnhancedNotification('Gerando PDF via atalho Ctrl+P', 'info', 2000);
+            }
+        },
+        'ctrl+h': (e) => {
+            e.preventDefault();
+            showKeyboardShortcutsHelp();
+        },
+        'ctrl+1': (e) => {
+            e.preventDefault();
+            switchToTab('generator');
+        },
+        'ctrl+2': (e) => {
+            e.preventDefault();
+            switchToTab('analyzer');
+        },
+        'ctrl+3': (e) => {
+            e.preventDefault();
+            switchToTab('statistics');
+        },
+        'ctrl+4': (e) => {
+            e.preventDefault();
+            switchToTab('history');
+        },
+        'ctrl+5': (e) => {
+            e.preventDefault();
+            switchToTab('settings');
+        },
+        'f1': (e) => {
+            e.preventDefault();
+            if (window.wizardSystem) {
+                window.wizardSystem.start();
+                showEnhancedNotification('Reiniciando wizard de configuração', 'info', 2000);
+            }
+        },
+        'escape': () => {
+            // Fechar modais ou overlays
+            const wizard = document.querySelector('.wizard-overlay');
+            if (wizard) {
+                window.wizardSystem.close();
+                return;
+            }
+            
+            // Fechar menu mobile se estiver aberto
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.getElementById('mobile-overlay');
+            if (sidebar && sidebar.classList.contains('mobile-open')) {
+                sidebar.classList.remove('mobile-open');
+                overlay.classList.remove('active');
+                const mobileToggle = document.getElementById('mobile-menu-toggle');
+                if (mobileToggle) {
+                    mobileToggle.querySelector('i').className = 'fas fa-bars';
+                }
+            }
+        }
+    };
+
+    document.addEventListener('keydown', (e) => {
+        const key = [];
+        
+        if (e.ctrlKey) key.push('ctrl');
+        if (e.altKey) key.push('alt');
+        if (e.shiftKey) key.push('shift');
+        
+        if (e.key === 'Escape') {
+            key.push('escape');
+        } else if (e.key === 'F1') {
+            key.push('f1');
+        } else if (e.key >= '1' && e.key <= '9') {
+            key.push(e.key);
+        } else if (e.key.length === 1) {
+            key.push(e.key.toLowerCase());
+        }
+        
+        const shortcut = key.join('+');
+        
+        if (shortcuts[shortcut]) {
+            // Verificar se não estamos em um input/textarea
+            const activeElement = document.activeElement;
+            const isInputActive = activeElement && (
+                activeElement.tagName === 'INPUT' ||
+                activeElement.tagName === 'TEXTAREA' ||
+                activeElement.contentEditable === 'true'
+            );
+            
+            // Permitir alguns atalhos mesmo em inputs
+            const allowedInInputs = ['escape', 'f1', 'ctrl+h'];
+            
+            if (!isInputActive || allowedInInputs.includes(shortcut)) {
+                shortcuts[shortcut](e);
+            }
+        }
+    });
+}
+
+function switchToTab(tabName) {
+    const tabButton = document.querySelector(`[data-tab="${tabName}"]`);
+    if (tabButton) {
+        tabButton.click();
+        showEnhancedNotification(`Mudando para aba: ${getTabDisplayName(tabName)}`, 'info', 2000);
+    }
+}
+
+function getTabDisplayName(tabName) {
+    const names = {
+        'generator': 'Gerador de Jogos',
+        'analyzer': 'Análise de Jogos',
+        'statistics': 'Estatísticas',
+        'history': 'Histórico',
+        'settings': 'Configurações'
+    };
+    return names[tabName] || tabName;
+}
+
+function showKeyboardShortcutsHelp() {
+    const helpContent = `
+        <div class="shortcuts-help">
+            <h3><i class="fas fa-keyboard"></i> Atalhos de Teclado</h3>
+            <div class="shortcuts-grid">
+                <div class="shortcut-group">
+                    <h4>Ações Principais</h4>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl + G</kbd>
+                        <span>Gerar Jogos</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl + A</kbd>
+                        <span>Executar Análise</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl + S</kbd>
+                        <span>Salvar Excel</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl + P</kbd>
+                        <span>Gerar PDF</span>
+                    </div>
+                </div>
+                
+                <div class="shortcut-group">
+                    <h4>Navegação</h4>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl + 1</kbd>
+                        <span>Gerador</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl + 2</kbd>
+                        <span>Análise</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl + 3</kbd>
+                        <span>Estatísticas</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl + 4</kbd>
+                        <span>Histórico</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl + 5</kbd>
+                        <span>Configurações</span>
+                    </div>
+                </div>
+                
+                <div class="shortcut-group">
+                    <h4>Utilitários</h4>
+                    <div class="shortcut-item">
+                        <kbd>F1</kbd>
+                        <span>Reiniciar Wizard</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl + H</kbd>
+                        <span>Ajuda de Atalhos</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Esc</kbd>
+                        <span>Fechar Modais</span>
+                    </div>
+                </div>
+            </div>
+            <div class="shortcuts-footer">
+                <p><i class="fas fa-info-circle"></i> Os atalhos ficam disponíveis quando não há campos de texto ativos.</p>
+            </div>
+        </div>
+    `;
+    
+    // Criar modal personalizado para atalhos
+    const modal = document.createElement('div');
+    modal.className = 'shortcuts-modal';
+    modal.innerHTML = `
+        <div class="shortcuts-modal-content">
+            ${helpContent}
+            <button class="shortcuts-close-btn" onclick="this.parentElement.parentElement.remove()">
+                <i class="fas fa-times"></i> Fechar
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Fechar com Escape
+    const escapeHandler = (e) => {
+        if (e.key === 'Escape') {
+            modal.remove();
+            document.removeEventListener('keydown', escapeHandler);
+        }
+    };
+    document.addEventListener('keydown', escapeHandler);
+    
+    // Fechar clicando fora
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+            document.removeEventListener('keydown', escapeHandler);
+        }
+    });
+}
+
+/**
+ * Controla o estado dos checkboxes de jogos externos baseado na seleção de jogos
+ * e na configuração principal de aproveitar jogos.
+ */
+export function updateExternalGamesCheckboxes() {
+    const aproveitaJogosCheckbox = document.getElementById('aproveitaJogos');
+    const checkboxes = [
+        'forcarUniversoJogosAproveitados',
+        'naoIncluirAproveitadosNoResultado', 
+        'validarRepeticaoJogosAproveitados',
+        'validarUniversoJogosAproveitados'
+    ];
+
+    // Verifica se há jogos selecionados na lista
+    const selectedGames = document.querySelectorAll('#generation-file-list .file-item-analise input[type="checkbox"]:checked');
+    const hasSelectedGames = selectedGames.length > 0;
+
+    // Habilita/desabilita o checkbox principal baseado na seleção
+    if (aproveitaJogosCheckbox) {
+        aproveitaJogosCheckbox.disabled = !hasSelectedGames;
+        
+        if (!hasSelectedGames) {
+            aproveitaJogosCheckbox.checked = false;
+        }
+    }
+
+    // Habilita/desabilita os outros checkboxes baseado no estado do principal
+    const isMainChecked = aproveitaJogosCheckbox && aproveitaJogosCheckbox.checked;
+    
+    checkboxes.forEach(id => {
+        const checkbox = document.getElementById(id);
+        if (checkbox) {
+            checkbox.disabled = !isMainChecked;
+            if (!isMainChecked) {
+                checkbox.checked = false;
+            }
+        }
+    });
+}
+
+export { 
+    initializeInterface, 
+    handleGlobalGameTypeChange, 
+    updateGenerationInputsState, 
+    showGenerationReport, 
+    showNotification, 
+    createSimulationBallPanel, 
+    updateSimulationBallPanelStats, 
+    checkAndSetEmptyState,
+    showSkeletonLoader,
+    hideSkeletonLoader,
+    setButtonLoading,
+    showEnhancedProgress,
+    showDotsLoader,
+    showEnhancedNotification,
+    breadcrumbManager,
+    wizardSystem,
+    toggleCollapsible,
+    initializeKeyboardShortcuts
+};

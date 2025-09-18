@@ -61,11 +61,6 @@ function validateGameConfig(config) {
         throw new Error('Acertos garantidos não podem exceder o total de dezenas disponíveis para seleção.');
     }
 
-    // Validação para aproveitamento de jogos
-    if (config.aproveitaJogos && config.jogosExistentes.length === 0) {
-        throw new Error('A opção "Aproveitar Jogos da lista" está marcada, mas nenhum jogo foi marcado na lista para ser aproveitado.');
-    }
-
     // Validações para a quantidade de jogos
     if (isNaN(config.quantidadeJogos) || config.quantidadeJogos <= 0) {
         throw new Error('Número de jogos a gerar deve ser um número positivo.');

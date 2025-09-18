@@ -1,5 +1,5 @@
 import { parseBrazilianNumber } from './validators.js';
-import { calculatePrizesForGames as calculatePrizesForSingleDraw } from './utils.js';
+import { combinations, randomChoice, formatBrazilianCurrency, formatBrazilianPercentage, combinationsCount, updateProgress, calculatePrizeCountsForGames, calculatePrizesForGames } from './utils.js';
 import { PRIZE_DEFAULTS, GAME_COSTS } from './constants.js';
 import { GAME_ANALYSIS_CONFIG } from './analyze.js';
 import { validateAndGetFileInfo } from './validators.js';
@@ -20,7 +20,7 @@ const chartInstances = {};
  */
 function calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios, downgradeMaxPrize = false) {
     return resultadosHistoricos.map(resultado => 
-        calculatePrizesForSingleDraw(jogos, resultado, gameConfig, premios, downgradeMaxPrize)
+        calculatePrizesForGames(jogos, resultado, gameConfig, premios, downgradeMaxPrize)
     );
 }
 
@@ -55,6 +55,50 @@ function getDistAxisConfig() {
         xMax: xMaxElement ? parseBrazilianNumber(xMaxElement.value) || null : null,
         yMin: yMinElement ? parseBrazilianNumber(yMinElement.value) || null : null,
         yMax: yMaxElement ? parseBrazilianNumber(yMaxElement.value) || null : null
+    };
+}
+
+/**
+ * Obtém as configurações dos eixos do gráfico de ROI.
+ */
+function getRoiAxisConfig() {
+    const xMinElement = document.getElementById('roi-grafico-eixo-x-min');
+    const xMaxElement = document.getElementById('roi-grafico-eixo-x-max');
+    const yMinElement = document.getElementById('roi-grafico-eixo-y-min');
+    const yMaxElement = document.getElementById('roi-grafico-eixo-y-max');
+
+    // Para o eixo X (percentual de sorteios), converter de percentual para índice
+    let xMin = null, xMax = null;
+    
+    if (xMinElement && xMinElement.value) {
+        const percentualMin = parseFloat(xMinElement.value);
+        if (!isNaN(percentualMin)) {
+            // Converter percentual para índice (0-100% mapeia para 0 até número total de labels)
+            const chart = chartInstances['roiChart'];
+            if (chart && chart.data.labels) {
+                const totalLabels = chart.data.labels.length;
+                xMin = Math.floor((percentualMin / 100) * totalLabels);
+            }
+        }
+    }
+    
+    if (xMaxElement && xMaxElement.value) {
+        const percentualMax = parseFloat(xMaxElement.value);
+        if (!isNaN(percentualMax)) {
+            // Converter percentual para índice
+            const chart = chartInstances['roiChart'];
+            if (chart && chart.data.labels) {
+                const totalLabels = chart.data.labels.length;
+                xMax = Math.ceil((percentualMax / 100) * totalLabels);
+            }
+        }
+    }
+
+    return {
+        xMin: xMin,
+        xMax: xMax,
+        yMin: yMinElement ? parseFloat(yMinElement.value) || null : null,
+        yMax: yMaxElement ? parseFloat(yMaxElement.value) || null : null
     };
 }
 /**
@@ -190,9 +234,10 @@ function createChart(canvasId, datasets, labels, title, axisConfig = {}) {
 
 /**
  * Cria um gráfico de distribuição de prêmios usando Chart.js.
- * @param {string} canvasId - ID do elemento canvas.
+ * @param {string} canvasId - O ID do canvas para o gráfico.
  * @param {Array} datasets - Os datasets para o gráfico.
  * @param {string} title - O título do gráfico.
+ * @param {Object} axisConfig - Configuração dos eixos.
  */
 function createPrizeDistributionChart(canvasId, datasets, title, axisConfig = {}) {
     if (chartInstances[canvasId]) {
@@ -209,108 +254,208 @@ function createPrizeDistributionChart(canvasId, datasets, title, axisConfig = {}
     const scalesConfig = {
         x: {
             type: 'linear', // Eixo X é numérico (valor do prêmio)
-            display: true,
+            position: 'bottom',
             title: {
                 display: true,
                 text: 'Valor do Prêmio (R$)',
-                color: '#374151',
-                font: { size: 14, weight: 'bold' }
+                font: {
+                    size: 14,
+                    weight: 'bold'
+                }
             },
-            grid: {
-                color: 'rgba(0, 0, 0, 0.1)'
-            },
+            ...(axisConfig.xMin !== null && { min: axisConfig.xMin }),
+            ...(axisConfig.xMax !== null && { max: axisConfig.xMax }),
             ticks: {
                 callback: function(value) {
-                    return new Intl.NumberFormat('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL'
-                    }).format(value);
+                    return formatCurrency(value);
                 }
             }
         },
         y: {
-            display: true,
-            position: 'right',
+            type: 'linear',
             title: {
                 display: true,
-                text: 'Quantidade de Sorteios',
-                color: '#374151',
-                font: { size: 14, weight: 'bold' }
+                text: 'Número de Sorteios',
+                font: {
+                    size: 14,
+                    weight: 'bold'
+                }
             },
-            grid: {
-                color: 'rgba(0, 0, 0, 0.1)'
-            },
+            ...(axisConfig.yMin !== null && { min: axisConfig.yMin }),
+            ...(axisConfig.yMax !== null && { max: axisConfig.yMax }),
             ticks: {
-                // Apenas inteiros no eixo Y
-                precision: 0,
-                beginAtZero: true
+                stepSize: 1
             }
         }
     };
 
-    // Aplicar configurações personalizadas dos eixos
-    if (axisConfig.xMin !== undefined && axisConfig.xMin !== null && axisConfig.xMin !== '') {
-        scalesConfig.x.min = axisConfig.xMin;
-    }
-    if (axisConfig.xMax !== undefined && axisConfig.xMax !== null && axisConfig.xMax !== '') {
-        scalesConfig.x.max = axisConfig.xMax;
-    }
-    if (axisConfig.yMin !== undefined && axisConfig.yMin !== null && axisConfig.yMin !== '') {
-        scalesConfig.y.min = axisConfig.yMin;
-    }
-    if (axisConfig.yMax !== undefined && axisConfig.yMax !== null && axisConfig.yMax !== '') {
-        scalesConfig.y.max = axisConfig.yMax;
-    }
-    
-    const chart = new Chart(context, {
-        type: 'line',
+    chartInstances[canvasId] = new Chart(context, {
+        type: 'scatter',
         data: {
             datasets: datasets
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            scales: scalesConfig,
             plugins: {
                 title: {
                     display: true,
                     text: title,
-                    font: { size: 18, weight: 'bold' },
-                    color: '#1f2937'
+                    font: {
+                        size: 16,
+                        weight: 'bold'
+                    },
+                    padding: 20
                 },
                 legend: {
                     display: true,
-                    position: 'top',
-                    labels: {
-                        usePointStyle: true,
-                        padding: 20
-                    }
+                    position: 'top'
                 },
                 tooltip: {
                     callbacks: {
                         title: function(context) {
-                            const value = context[0].parsed.x;
-                            const formattedValue = new Intl.NumberFormat('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL'
-                            }).format(value);
-                            return `Prêmio de ${formattedValue}`;
+                            const datasetLabel = context[0].dataset.label || '';
+                            return datasetLabel;
                         },
                         label: function(context) {
-                            const count = context.parsed.y;
-                            return `${context.dataset.label}: ${count} sorteio(s)`;
+                            const x = context.parsed.x;
+                            const y = context.parsed.y;
+                            const formattedValue = formatCurrency(x);
+                            return `Prêmio de ${formattedValue}`;
+                        },
+                        afterLabel: function(context) {
+                            const y = context.parsed.y;
+                            const plural = y > 1 ? 's' : '';
+                            return `Ocorreu em ${y} sorteio${plural}`;
                         }
                     }
                 }
             },
-            scales: scalesConfig,
-            interaction: {
-                intersect: false,
-                mode: 'index'
+            elements: {
+                point: {
+                    radius: 5,
+                    hoverRadius: 8
+                }
             }
         }
     });
+}
 
-    chartInstances[canvasId] = chart;
+/**
+ * Cria um gráfico de ROI usando Chart.js.
+ * @param {string} canvasId - O ID do canvas para o gráfico.
+ * @param {Array} datasets - Os datasets para o gráfico.
+ * @param {string} title - O título do gráfico.
+ * @param {Object} axisConfig - Configuração dos eixos.
+ */
+function createRoiChart(canvasId, datasets, labels, title, axisConfig = {}) {
+    if (chartInstances[canvasId]) {
+        chartInstances[canvasId].destroy();
+    }
+
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) {
+        throw new Error(`Elemento canvas para gráfico '${canvasId}' não encontrado`);
+    }
+    
+    const context = ctx.getContext('2d');
+    
+    const scalesConfig = {
+        x: {
+            display: true,
+            title: {
+                display: true,
+                text: 'Percentual de Sorteios Testados (%)',
+                font: {
+                    size: 14,
+                    weight: 'bold'
+                }
+            },
+            ...(axisConfig.xMin !== null && { min: axisConfig.xMin }),
+            ...(axisConfig.xMax !== null && { max: axisConfig.xMax }),
+            ticks: {
+                callback: function(value, index) {
+                    const label = this.getLabelForValue(value);
+                    return label + '%';
+                }
+            }
+        },
+        y: {
+            display: true,
+            title: {
+                display: true,
+                text: 'ROI (%)',
+                font: {
+                    size: 14,
+                    weight: 'bold'
+                }
+            },
+            ...(axisConfig.yMin !== null && { min: axisConfig.yMin }),
+            ...(axisConfig.yMax !== null && { max: axisConfig.yMax }),
+            ticks: {
+                callback: function(value) {
+                    return value.toFixed(2) + '%';
+                }
+            }
+        }
+    };
+
+    chartInstances[canvasId] = new Chart(context, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: {
+                    top: 10,
+                    bottom: 10,
+                    left: 10,
+                    right: 10
+                }
+            },
+            scales: scalesConfig,
+            plugins: {
+                title: {
+                    display: true,
+                    text: title,
+                    font: {
+                        size: 16,
+                        weight: 'bold'
+                    },
+                    padding: 10
+                },
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    callbacks: {
+                        title: function(context) {
+                            const dataIndex = context[0].dataIndex;
+                            const label = context[0].chart.data.labels[dataIndex];
+                            return `${label}% dos sorteios testados`;
+                        },
+                        label: function(context) {
+                            const datasetLabel = context.dataset.label || '';
+                            const value = context.parsed.y.toFixed(2);
+                            return `${datasetLabel}: ${value}%`;
+                        }
+                    }
+                }
+            },
+            elements: {
+                point: {
+                    radius: 2,
+                    hoverRadius: 5
+                }
+            }
+        }
+    });
 }
 
 /**
@@ -360,42 +505,55 @@ function updateChartAxes() {
 /**
  * Atualiza os eixos do gráfico de distribuição.
  */
-function updateDistChartAxes() {
-    const distChart = chartInstances['distributionChart'];
-    if (!distChart) {
+function updateDistributionChartAxes() {
+    if (chartInstances['distributionChart']) {
+        const axisConfig = getDistAxisConfig();
+        const chart = chartInstances['distributionChart'];
+        
+        // Atualizar configurações dos eixos
+        if (axisConfig.xMin !== null) chart.options.scales.x.min = axisConfig.xMin;
+        else delete chart.options.scales.x.min;
+        
+        if (axisConfig.xMax !== null) chart.options.scales.x.max = axisConfig.xMax;
+        else delete chart.options.scales.x.max;
+        
+        if (axisConfig.yMin !== null) chart.options.scales.y.min = axisConfig.yMin;
+        else delete chart.options.scales.y.min;
+        
+        if (axisConfig.yMax !== null) chart.options.scales.y.max = axisConfig.yMax;
+        else delete chart.options.scales.y.max;
+        
+        chart.update();
+    } else {
         console.warn('Nenhum gráfico de distribuição ativo para atualizar');
-        return;
     }
+}
 
-    const axisConfig = getDistAxisConfig();
-    
-    // Update X axis
-    if (axisConfig.xMin !== undefined && axisConfig.xMin !== null && axisConfig.xMin !== '') {
-        distChart.options.scales.x.min = axisConfig.xMin;
+/**
+ * Atualiza os eixos do gráfico de ROI.
+ */
+function updateRoiChartAxes() {
+    if (chartInstances['roiChart']) {
+        const axisConfig = getRoiAxisConfig();
+        const chart = chartInstances['roiChart'];
+        
+        // Atualizar configurações dos eixos
+        if (axisConfig.xMin !== null) chart.options.scales.x.min = axisConfig.xMin;
+        else delete chart.options.scales.x.min;
+        
+        if (axisConfig.xMax !== null) chart.options.scales.x.max = axisConfig.xMax;
+        else delete chart.options.scales.x.max;
+        
+        if (axisConfig.yMin !== null) chart.options.scales.y.min = axisConfig.yMin;
+        else delete chart.options.scales.y.min;
+        
+        if (axisConfig.yMax !== null) chart.options.scales.y.max = axisConfig.yMax;
+        else delete chart.options.scales.y.max;
+        
+        chart.update();
     } else {
-        delete distChart.options.scales.x.min;
+        console.warn('Nenhum gráfico de ROI ativo para atualizar');
     }
-    
-    if (axisConfig.xMax !== undefined && axisConfig.xMax !== null && axisConfig.xMax !== '') {
-        distChart.options.scales.x.max = axisConfig.xMax;
-    } else {
-        delete distChart.options.scales.x.max;
-    }
-    
-    // Update Y axis
-    if (axisConfig.yMin !== undefined && axisConfig.yMin !== null && axisConfig.yMin !== '') {
-        distChart.options.scales.y.min = axisConfig.yMin;
-    } else {
-        delete distChart.options.scales.y.min;
-    }
-    
-    if (axisConfig.yMax !== undefined && axisConfig.yMax !== null && axisConfig.yMax !== '') {
-        distChart.options.scales.y.max = axisConfig.yMax;
-    } else {
-        delete distChart.options.scales.y.max;
-    }
-
-    distChart.update();
 }
 /**
  * Preenche sugestões automáticas nos campos de eixos.
@@ -607,7 +765,7 @@ function printChartToPDF() {
 /**
  * Formata um valor como moeda brasileira.
  */
-function formatCurrency(value) {
+export function formatCurrency(value) {
     return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
         currency: 'BRL'
@@ -636,6 +794,63 @@ function resetDistAxisSliders() {
         if (input) input.value = '';
     });
 }
+
+function resetRoiAxisSliders() {
+    const inputs = ['roi-grafico-eixo-x-min', 'roi-grafico-eixo-x-max', 'roi-grafico-eixo-y-min', 'roi-grafico-eixo-y-max'];
+    inputs.forEach(inputId => {
+        const input = document.getElementById(inputId);
+        if (input) input.value = '';
+    });
+}
+
+/**
+ * Preenche sugestões automáticas nos campos de eixos do gráfico de ROI.
+ */
+function populateRoiAxisSuggestions() {
+    if (!chartInstances['roiChart']) return;
+    
+    const chart = chartInstances['roiChart'];
+    const datasets = chart.data.datasets;
+    
+    if (!datasets || datasets.length === 0) return;
+    
+    // Coletar todos os valores Y (ROI) dos datasets
+    const allRoiValues = [];
+    datasets.forEach(dataset => {
+        if (dataset.data && Array.isArray(dataset.data)) {
+            dataset.data.forEach(value => {
+                if (typeof value === 'number' && !isNaN(value)) {
+                    allRoiValues.push(value);
+                }
+            });
+        }
+    });
+    
+    if (allRoiValues.length === 0) return;
+    
+    // Calcular estatísticas
+    const minRoi = Math.min(...allRoiValues);
+    const maxRoi = Math.max(...allRoiValues);
+    
+    // Preencher sugestões nos placeholders
+    const roiYMinElement = document.getElementById('roi-grafico-eixo-y-min');
+    const roiYMaxElement = document.getElementById('roi-grafico-eixo-y-max');
+    const roiXMinElement = document.getElementById('roi-grafico-eixo-x-min');
+    const roiXMaxElement = document.getElementById('roi-grafico-eixo-x-max');
+    
+    if (roiYMinElement) {
+        roiYMinElement.placeholder = Math.floor(minRoi * 0.9).toFixed(2);
+    }
+    if (roiYMaxElement) {
+        roiYMaxElement.placeholder = Math.ceil(maxRoi * 1.1).toFixed(2);
+    }
+    if (roiXMinElement) {
+        roiXMinElement.placeholder = '0';
+    }
+    if (roiXMaxElement) {
+        roiXMaxElement.placeholder = '100';
+    }
+}
 /**
  * Função principal para gerar gráficos de resultados.
  */
@@ -645,6 +860,7 @@ async function generateResultCharts() {
     const loader = document.getElementById('loader-graficos');
     const orderedContainer = document.getElementById('ordenados-chart-container');
     const distContainer = document.getElementById('distribuicao-chart-container');
+    const roiContainer = document.getElementById('roi-chart-container');
     const section = document.getElementById('analise-graficos-section');
     const printBtn = document.getElementById('btn-imprimir-grafico-analise');
 
@@ -671,6 +887,7 @@ async function generateResultCharts() {
     loader.style.display = 'flex';
     if (orderedContainer) orderedContainer.innerHTML = '';
     if (distContainer) distContainer.innerHTML = '';
+    if (roiContainer) roiContainer.innerHTML = '';
 
     try {
         // Verificar se XLSX está disponível
@@ -766,16 +983,41 @@ async function generateResultCharts() {
                 continue;
             }
 
-            // Calcula o custo total para os jogos deste arquivo
+            // Calcula o custo total para os jogos deste arquivo usando informações específicas de cotas
             let custoTotalArquivo = 0;
+            const gameData = arquivo.gameData; // Dados específicos deste jogo
+            
             jogos.forEach(jogo => {
-                custoTotalArquivo += costTable[jogo.length] || 0;
+                const custoJogoBase = costTable[jogo.length] || 0;
+                
+                // Calcular custo ajustado usando informações específicas do jogo
+                let custoJogoAjustado = custoJogoBase;
+                if (gameData && gameData.quotaInfo && gameData.quotaInfo.ativo) {
+                    const proporcaoCotas = gameData.quotaInfo.cotasCompradas / gameData.quotaInfo.quantidadeCotas;
+                    custoJogoAjustado = custoJogoBase * proporcaoCotas;
+                    
+                    if (gameData.quotaInfo.pago35Caixa) {
+                        custoJogoAjustado *= 1.35;
+                    }
+                }
+                
+                custoTotalArquivo += custoJogoAjustado;
             });
             const custoTotalFormatado = formatCurrency(custoTotalArquivo);
             const newLabel = `${arquivo.name} (Custo: ${custoTotalFormatado})`;
 
             // Dados para o primeiro gráfico (prêmios ordenados), considerando a opção de rebaixamento
-            const premiosPorSorteio = calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios, downgradeMaxPrize);
+            const premiosPorSorteioBase = calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios, downgradeMaxPrize);
+            
+            // Aplicar proporção de cotas aos prêmios se existir quotaInfo
+            const premiosPorSorteio = premiosPorSorteioBase.map(premio => {
+                if (gameData && gameData.quotaInfo && gameData.quotaInfo.ativo) {
+                    const proporcaoCotas = gameData.quotaInfo.cotasCompradas / gameData.quotaInfo.quantidadeCotas;
+                    return premio * proporcaoCotas;
+                }
+                return premio;
+            });
+            
             const dadosOrdenados = premiosPorSorteio
                 .map((premio, index) => ({ premio, sorteio: index + 1 }))
                 .sort((a, b) => a.premio - b.premio);
@@ -814,6 +1056,134 @@ async function generateResultCharts() {
             throw new Error('Nenhum arquivo continha jogos válidos para análise.');
         }
 
+        // Adicionar dataset "Todos os Jogos" se houver mais de um arquivo
+        if (arquivos.length > 1) {
+            progress.textContent = 'Processando conjunto "Todos os Jogos"...';
+            
+            // Combinar todos os jogos de todos os arquivos
+            let todosOsJogos = [];
+            let custoTotalTodosJogos = 0;
+            
+            for (const arquivo of arquivos) {
+                let jogos;
+                if (arquivo.gameData.type === 'external') {
+                    const fileInfo = await validateAndGetFileInfo(arquivo.gameData.file);
+                    jogos = fileInfo.games;
+                } else if (arquivo.gameData.type === 'generated' && arquivo.gameData.allGames) {
+                    jogos = arquivo.gameData.allGames
+                        .map(row => row.filter(num => num >= 1 && num <= gameConfig.maxBalls).map(Number))
+                        .filter(row => row.length > 0)
+                        .map(row => row.sort((a, b) => a - b));
+                } else {
+                    jogos = [];
+                }
+                
+                if (jogos.length > 0) {
+                    todosOsJogos = todosOsJogos.concat(jogos);
+                    // Calcular custo deste arquivo usando informações específicas de cotas
+                    const gameData = arquivo.gameData; // Dados específicos deste jogo
+                    
+                    jogos.forEach(jogo => {
+                        const custoJogoBase = costTable[jogo.length] || 0;
+                        
+                        // Calcular custo ajustado usando informações específicas do jogo
+                        let custoJogoAjustado = custoJogoBase;
+                        if (gameData && gameData.quotaInfo && gameData.quotaInfo.ativo) {
+                            const proporcaoCotas = gameData.quotaInfo.cotasCompradas / gameData.quotaInfo.quantidadeCotas;
+                            custoJogoAjustado = custoJogoBase * proporcaoCotas;
+                            
+                            if (gameData.quotaInfo.pago35Caixa) {
+                                custoJogoAjustado *= 1.35;
+                            }
+                        }
+                        
+                        custoTotalTodosJogos += custoJogoAjustado;
+                    });
+                }
+            }
+            
+            if (todosOsJogos.length > 0) {
+                const custoTotalFormatado = formatCurrency(custoTotalTodosJogos);
+                const labelTodosJogos = `Todos os Jogos (Custo: ${custoTotalFormatado})`;
+                
+                // Dados para o primeiro gráfico (prêmios ordenados)
+                // Calcular prêmios separadamente para cada arquivo e depois somar
+                const premiosPorSorteioTodos = [];
+                
+                for (let sorteioIndex = 0; sorteioIndex < resultadosHistoricos.length; sorteioIndex++) {
+                    const resultado = resultadosHistoricos[sorteioIndex];
+                    let premioTotalSorteio = 0;
+                    
+                    for (const arquivo of arquivos) {
+                        let jogos;
+                        if (arquivo.gameData.type === 'external') {
+                            const fileInfo = await validateAndGetFileInfo(arquivo.gameData.file);
+                            jogos = fileInfo.games;
+                        } else if (arquivo.gameData.type === 'generated' && arquivo.gameData.allGames) {
+                            jogos = arquivo.gameData.allGames
+                                .map(row => row.filter(num => num >= 1 && num <= gameConfig.maxBalls).map(Number))
+                                .filter(row => row.length > 0)
+                                .map(row => row.sort((a, b) => a - b));
+                        } else {
+                            jogos = [];
+                        }
+                        
+                        if (jogos.length > 0) {
+                            // Calcular prêmio base para este arquivo
+                            const premioBaseArquivo = calculatePrizesForGames(jogos, resultado, gameConfig, premios, downgradeMaxPrize);
+                            
+                            // Aplicar proporção de cotas específica deste arquivo
+                            let premioAjustadoArquivo = premioBaseArquivo;
+                            if (arquivo.gameData && arquivo.gameData.quotaInfo && arquivo.gameData.quotaInfo.ativo) {
+                                const proporcaoCotas = arquivo.gameData.quotaInfo.cotasCompradas / arquivo.gameData.quotaInfo.quantidadeCotas;
+                                premioAjustadoArquivo = premioBaseArquivo * proporcaoCotas;
+                            }
+                            
+                            premioTotalSorteio += premioAjustadoArquivo;
+                        }
+                    }
+                    
+                    premiosPorSorteioTodos.push(premioTotalSorteio);
+                }
+                
+                const dadosOrdenadosTodos = premiosPorSorteioTodos
+                    .map((premio, index) => ({ premio, sorteio: index + 1 }))
+                    .sort((a, b) => a.premio - b.premio);
+                
+                datasets.push({
+                    label: labelTodosJogos,
+                    data: dadosOrdenadosTodos.map(d => d.premio),
+                    borderColor: '#000000', // Preto para destaque
+                    backgroundColor: '#00000020',
+                    fill: false,
+                    tension: 0.1,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
+                    borderWidth: 3 // Linha mais grossa para destaque
+                });
+                
+                // Dados para o segundo gráfico (distribuição de prêmios)
+                const prizeDistributionTodos = premiosPorSorteioTodos.reduce((acc, prize) => {
+                    acc[prize] = (acc[prize] || 0) + 1;
+                    return acc;
+                }, {});
+                
+                const distributionDataTodos = Object.entries(prizeDistributionTodos).map(([prize, count]) => ({
+                    x: Number(prize),
+                    y: count
+                })).sort((a, b) => a.x - b.x);
+                
+                distributionDatasets.push({
+                    label: labelTodosJogos,
+                    data: distributionDataTodos,
+                    borderColor: '#000000', // Preto para destaque
+                    backgroundColor: '#00000020',
+                    fill: false,
+                    borderWidth: 3 // Linha mais grossa para destaque
+                });
+            }
+        }
+
         // Criar labels e canvas
         // Gráfico 1: Prêmios Ordenados
         const maxLength = Math.max(...datasets.map(d => d.data.length));
@@ -838,7 +1208,217 @@ async function generateResultCharts() {
         createChart('resultsChart', datasets, labels, 
             `Prêmios por Sorteio (Ordenados por Valor) - ${tipoJogo.toUpperCase()}`, axisConfig);
 
-        // Gráfico 2: Distribuição de Prêmios
+        // Gráfico 2: ROI por Sorteio
+        const roiContainer = document.getElementById('roi-chart-container');
+        const roiAxisConfig = getRoiAxisConfig();
+        const roiChartContainer = document.createElement('div');
+        roiChartContainer.style.width = '100%';
+        roiChartContainer.style.height = '500px';
+        roiChartContainer.style.position = 'relative';
+        roiChartContainer.style.marginTop = '40px';
+
+        const roiCanvas = document.createElement('canvas');
+        roiCanvas.id = 'roiChart';
+        roiCanvas.style.width = '100%';
+        roiCanvas.style.height = '100%';
+        roiChartContainer.appendChild(roiCanvas);
+        if (roiContainer) roiContainer.appendChild(roiChartContainer);
+
+        // Criar datasets de ROI baseados nos datasets de prêmios e custos
+        const roiDatasets = [];
+        
+        for (let i = 0; i < arquivos.length; i++) {
+            const arquivo = arquivos[i];
+            
+            // Obter dados de prêmios e custo do arquivo
+            let custoTotalArquivo = 0;
+            let jogos;
+            
+            if (arquivo.gameData.type === 'external') {
+                const fileInfo = await validateAndGetFileInfo(arquivo.gameData.file);
+                jogos = fileInfo.games;
+            } else if (arquivo.gameData.type === 'generated' && arquivo.gameData.allGames) {
+                jogos = arquivo.gameData.allGames
+                    .map(row => row.filter(num => num >= 1 && num <= gameConfig.maxBalls).map(Number))
+                    .filter(row => row.length > 0)
+                    .map(row => row.sort((a, b) => a - b));
+            } else {
+                jogos = [];
+            }
+            
+            if (jogos.length > 0) {
+                // Calcular custo total do arquivo
+                const gameData = arquivo.gameData;
+                
+                jogos.forEach(jogo => {
+                    const custoJogoBase = costTable[jogo.length] || 0;
+                    let custoJogoAjustado = custoJogoBase;
+                    
+                    if (gameData && gameData.quotaInfo && gameData.quotaInfo.ativo) {
+                        const proporcaoCotas = gameData.quotaInfo.cotasCompradas / gameData.quotaInfo.quantidadeCotas;
+                        custoJogoAjustado = custoJogoBase * proporcaoCotas;
+                        
+                        if (gameData.quotaInfo.pago35Caixa) {
+                            custoJogoAjustado *= 1.35;
+                        }
+                    }
+                    
+                    custoTotalArquivo += custoJogoAjustado;
+                });
+                
+                // Calcular ROI para cada sorteio
+                const premiosPorSorteioBase = calculatePrizes(jogos, resultadosHistoricos, gameConfig, premios, downgradeMaxPrize);
+                
+                // Aplicar proporção de cotas aos prêmios se existir quotaInfo
+                const premiosPorSorteio = premiosPorSorteioBase.map(premio => {
+                    if (gameData && gameData.quotaInfo && gameData.quotaInfo.ativo) {
+                        const proporcaoCotas = gameData.quotaInfo.cotasCompradas / gameData.quotaInfo.quantidadeCotas;
+                        return premio * proporcaoCotas;
+                    }
+                    return premio;
+                });
+                
+                // Calcular ROI em percentual para cada sorteio
+                const roiDataRaw = premiosPorSorteio.map((premio, index) => ({
+                    sorteio: index,
+                    roi: custoTotalArquivo === 0 ? 0 : (premio / custoTotalArquivo) * 100
+                }));
+                
+                // Ordenar por ROI crescente
+                const roiDataOrdenado = roiDataRaw
+                    .sort((a, b) => a.roi - b.roi)
+                    .map((item, index) => item.roi);
+                
+                const custoTotalFormatado = formatCurrency(custoTotalArquivo);
+                const roiLabel = `${arquivo.name} (Custo: ${custoTotalFormatado})`;
+                
+                roiDatasets.push({
+                    label: roiLabel,
+                    data: roiDataOrdenado,
+                    borderColor: colors[i % colors.length],
+                    backgroundColor: colors[i % colors.length] + '20',
+                    fill: false,
+                    tension: 0.1,
+                    pointRadius: 2,
+                    pointHoverRadius: 5
+                });
+            }
+        }
+        
+        // Adicionar dataset "Todos os Jogos" se houver mais de um arquivo
+        if (arquivos.length > 1) {
+            // Calcular ROI para "Todos os Jogos"
+            const roiDataTodos = [];
+            let custoTotalTodosJogosGlobal = 0; // Calcular uma vez fora do loop
+            
+            // Primeiro, calcular o custo total global
+            for (const arquivo of arquivos) {
+                let jogos;
+                if (arquivo.gameData.type === 'external') {
+                    const fileInfo = await validateAndGetFileInfo(arquivo.gameData.file);
+                    jogos = fileInfo.games;
+                } else if (arquivo.gameData.type === 'generated' && arquivo.gameData.allGames) {
+                    jogos = arquivo.gameData.allGames
+                        .map(row => row.filter(num => num >= 1 && num <= gameConfig.maxBalls).map(Number))
+                        .filter(row => row.length > 0)
+                        .map(row => row.sort((a, b) => a - b));
+                } else {
+                    jogos = [];
+                }
+                
+                if (jogos.length > 0) {
+                    const gameData = arquivo.gameData;
+                    
+                    jogos.forEach(jogo => {
+                        const custoJogoBase = costTable[jogo.length] || 0;
+                        let custoJogoAjustado = custoJogoBase;
+                        
+                        if (gameData && gameData.quotaInfo && gameData.quotaInfo.ativo) {
+                            const proporcaoCotas = gameData.quotaInfo.cotasCompradas / gameData.quotaInfo.quantidadeCotas;
+                            custoJogoAjustado = custoJogoBase * proporcaoCotas;
+                            
+                            if (gameData.quotaInfo.pago35Caixa) {
+                                custoJogoAjustado *= 1.35;
+                            }
+                        }
+                        
+                        custoTotalTodosJogosGlobal += custoJogoAjustado;
+                    });
+                }
+            }
+            
+            // Agora calcular ROI para cada sorteio
+            for (let sorteioIndex = 0; sorteioIndex < resultadosHistoricos.length; sorteioIndex++) {
+                const resultado = resultadosHistoricos[sorteioIndex];
+                let premioTotalSorteio = 0;
+                
+                for (const arquivo of arquivos) {
+                    let jogos;
+                    if (arquivo.gameData.type === 'external') {
+                        const fileInfo = await validateAndGetFileInfo(arquivo.gameData.file);
+                        jogos = fileInfo.games;
+                    } else if (arquivo.gameData.type === 'generated' && arquivo.gameData.allGames) {
+                        jogos = arquivo.gameData.allGames
+                            .map(row => row.filter(num => num >= 1 && num <= gameConfig.maxBalls).map(Number))
+                            .filter(row => row.length > 0)
+                            .map(row => row.sort((a, b) => a - b));
+                    } else {
+                        jogos = [];
+                    }
+                    
+                    if (jogos.length > 0) {
+                        // Calcular prêmio para este arquivo neste sorteio
+                        const premioBaseArquivo = calculatePrizesForGames(jogos, resultado, gameConfig, premios, downgradeMaxPrize);
+                        
+                        let premioAjustadoArquivo = premioBaseArquivo;
+                        const gameData = arquivo.gameData;
+                        
+                        if (gameData && gameData.quotaInfo && gameData.quotaInfo.ativo) {
+                            const proporcaoCotas = gameData.quotaInfo.cotasCompradas / gameData.quotaInfo.quantidadeCotas;
+                            premioAjustadoArquivo = premioBaseArquivo * proporcaoCotas;
+                        }
+                        
+                        premioTotalSorteio += premioAjustadoArquivo;
+                    }
+                }
+                
+                // Calcular ROI para este sorteio
+                const roiSorteio = custoTotalTodosJogosGlobal === 0 ? 0 : (premioTotalSorteio / custoTotalTodosJogosGlobal) * 100;
+                roiDataTodos.push({ sorteio: sorteioIndex, roi: roiSorteio });
+            }
+            
+            // Ordenar "Todos os Jogos" por ROI crescente
+            const roiDataTodosOrdenado = roiDataTodos
+                .sort((a, b) => a.roi - b.roi)
+                .map(item => item.roi);
+            
+            const custoTotalFormatado = formatCurrency(custoTotalTodosJogosGlobal);
+            const roiLabelTodos = `Todos os Jogos (Custo: ${custoTotalFormatado})`;
+            
+            roiDatasets.push({
+                label: roiLabelTodos,
+                data: roiDataTodosOrdenado,
+                borderColor: '#000000', // Preto para destaque
+                backgroundColor: '#00000020',
+                fill: false,
+                tension: 0.1,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                borderWidth: 3 // Linha mais grossa para destaque
+            });
+        }
+
+        // Criar labels em percentual baseado no número de sorteios
+        const totalSorteios = resultadosHistoricos.length;
+        const roiLabels = [];
+        for (let i = 1; i <= totalSorteios; i++) {
+            const percentual = (i / totalSorteios * 100).toFixed(1);
+            roiLabels.push(percentual);
+        }
+
+        createRoiChart('roiChart', roiDatasets, roiLabels, `ROI por Sorteio - ${tipoJogo.toUpperCase()}`, roiAxisConfig);
+
+        // Gráfico 3: Distribuição de Prêmios
         const distAxisConfig = getDistAxisConfig();
         const distChartContainer = document.createElement('div');
         distChartContainer.style.width = '100%';
@@ -857,6 +1437,7 @@ async function generateResultCharts() {
         // Preencher sugestões de valores mínimos e máximos
         populateAxisSuggestions();
         populateDistAxisSuggestions();
+        populateRoiAxisSuggestions();
 
         // Show print button
         if (printBtn) {
@@ -877,4 +1458,4 @@ async function generateResultCharts() {
     }
 }
 
-export { generateResultCharts, updateChartAxes, printChartToPDF, resetAxisSliders, updateDistChartAxes, resetDistAxisSliders };
+export { generateResultCharts, updateChartAxes, printChartToPDF, resetAxisSliders, updateDistributionChartAxes, resetDistAxisSliders, updateRoiChartAxes, resetRoiAxisSliders };

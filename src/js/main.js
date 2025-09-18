@@ -1,9 +1,9 @@
-import { initializeInterface, handleGlobalGameTypeChange, updateGenerationInputsState, showNotification, createSimulationBallPanel, updateSimulationBallPanelStats, showGenerationReport, addManagedGame } from './interface.js';
+import { initializeInterface, handleGlobalGameTypeChange, updateGenerationInputsState, showNotification, createSimulationBallPanel, updateSimulationBallPanelStats, showGenerationReport, addManagedGame, setButtonLoading, showEnhancedProgress, showDotsLoader, showEnhancedNotification, updateExternalGamesCheckboxes } from './interface.js';
 import { gerarJogosSemAcertosGarantidosRepetidos } from './generate.js';
 import { executeAnalysis, saveAnalysisToExcel, printPieChartsToPDF } from './analyze.js';
 import { generateVolantePDF, coletarConfiguracoesImpressao, aplicarConfiguracoesImpressao } from './printPdf.js';
 import { validateGameConfig, parseBrazilianNumber, validateAndGetFileInfo } from './validators.js';
-import { updateProgress, jogosJaGerados, combinations } from './utils.js';
+import { updateProgress, jogosJaGerados, combinations, formatBrazilianCurrency, calcularCustoComCotas } from './utils.js';
 import { GAME_DEFAULTS, GAME_COSTS } from './constants.js';
 
 /**
@@ -35,6 +35,9 @@ function init() {
  * @returns {void}
  */
 function setupEventListeners() {
+    // Controles de navegação mobile
+    setupMobileNavigation();
+    
     // Botões principais (gerar jogos, relatórios, PDFs, gráficos)
     setupMainButtons();
     
@@ -56,12 +59,103 @@ function setupEventListeners() {
     // Controles de salvamento e carregamento de configurações de PDF
     setupPdfConfigControls();
 
+    // Controles de cotas para jogos
+    setupCotasControls();
+
     // Controles de navegação por abas
     setupTabControls();
 
     // Listener para deleção de jogos das listas unificadas
     document.addEventListener('deleteManagedGame', (e) => {
         deleteManagedGame(e.detail.id);
+    });
+
+    // Configurar listener para checkbox de aproveitar jogos
+    const aproveitaJogosCheckbox = document.getElementById('aproveitaJogos');
+    if (aproveitaJogosCheckbox) {
+        aproveitaJogosCheckbox.addEventListener('change', () => {
+            updateExternalGamesCheckboxes();
+        });
+    }
+
+    // Inicializar estado dos checkboxes
+    updateExternalGamesCheckboxes();
+
+    // Inicializar wizard para novos usuários (com delay para aguardar carregamento)
+    setTimeout(() => {
+        if (window.wizardSystem) {
+            window.wizardSystem.start();
+        }
+    }, 1000);
+}
+
+/**
+ * Configura os controles de navegação mobile (menu hamburger).
+ * @function setupMobileNavigation
+ * @returns {void}
+ */
+function setupMobileNavigation() {
+    const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+    const mobileOverlay = document.getElementById('mobile-overlay');
+    const sidebar = document.querySelector('.sidebar');
+    
+    if (!mobileMenuToggle || !mobileOverlay || !sidebar) return;
+    
+    // Abrir/fechar menu
+    mobileMenuToggle.addEventListener('click', () => {
+        sidebar.classList.toggle('mobile-open');
+        mobileOverlay.classList.toggle('active');
+        
+        // Atualizar ícone do botão
+        const icon = mobileMenuToggle.querySelector('i');
+        if (sidebar.classList.contains('mobile-open')) {
+            icon.className = 'fas fa-times';
+        } else {
+            icon.className = 'fas fa-bars';
+        }
+    });
+    
+    // Fechar menu ao clicar no overlay
+    mobileOverlay.addEventListener('click', () => {
+        sidebar.classList.remove('mobile-open');
+        mobileOverlay.classList.remove('active');
+        
+        // Resetar ícone
+        const icon = mobileMenuToggle.querySelector('i');
+        icon.className = 'fas fa-bars';
+    });
+    
+    // Fechar menu ao clicar em uma aba
+    const navTabs = document.querySelectorAll('.nav-tab');
+    navTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Atualizar breadcrumb
+            const tabSection = tab.getAttribute('data-tab') || 'dashboard';
+            if (window.breadcrumbManager) {
+                window.breadcrumbManager.updateBreadcrumb(tabSection);
+            }
+            
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('mobile-open');
+                mobileOverlay.classList.remove('active');
+                
+                // Resetar ícone
+                const icon = mobileMenuToggle.querySelector('i');
+                icon.className = 'fas fa-bars';
+            }
+        });
+    });
+    
+    // Fechar menu ao redimensionar para desktop
+    window.addEventListener('resize', () => {
+        if (window.innerWidth > 768) {
+            sidebar.classList.remove('mobile-open');
+            mobileOverlay.classList.remove('active');
+            
+            // Resetar ícone
+            const icon = mobileMenuToggle.querySelector('i');
+            icon.className = 'fas fa-bars';
+        }
     });
 }
 
@@ -132,6 +226,20 @@ function setupMainButtons() {
             generateVolantePDF();
         });
     }
+
+    // Botão para visualizar relatório de geração
+    const btnVisualizarRelatorio = document.getElementById('btn-visualizar-relatorio');
+    if (btnVisualizarRelatorio) {
+        btnVisualizarRelatorio.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.lastGenerationReport) {
+                const { reportData, workbook, filename } = window.lastGenerationReport;
+                showGenerationReport(reportData, workbook, filename);
+            } else {
+                showNotification('Nenhum relatório de geração disponível. Gere jogos primeiro.', 'warning');
+            }
+        });
+    }
 }
 
 /**
@@ -170,6 +278,7 @@ function _getGenerationConfig() {
         quantidadeJogos: parseBrazilianNumber(document.getElementById('quantidadeJogos').value) || defaults.quantidadeJogos,
         aproveitaJogos: document.getElementById('aproveitaJogos').checked,
         forcarUniversoJogosAproveitados: document.getElementById('forcarUniversoJogosAproveitados').checked,
+        incluirAproveitadosNoArquivo: document.getElementById('naoIncluirAproveitadosNoResultado').checked,
         validarRepeticaoJogosAproveitados: document.getElementById('validarRepeticaoJogosAproveitados').checked,
         validarUniversoJogosAproveitados: document.getElementById('validarUniversoJogosAproveitados').checked,
         jogosExistentes: [],
@@ -199,15 +308,19 @@ async function handleGenerateGamesClick() {
     const btnGerar = document.getElementById('btn-gerar-jogos');
     const btnParar = document.getElementById('btn-parar-geracao');
 
+    // Ativar estado de loading no botão
+    setButtonLoading('btn-gerar-jogos', true, 'Gerando...');
+
     // Exibe o modal de progresso
     if (progressModal) progressModal.style.display = 'flex';
     
-    status.textContent = 'Preparando para gerar jogos...';
-    status.style.display = 'flex';
-    status.classList.remove('error');
+    // Exibir loading aprimorado
+    showEnhancedNotification('status-geracao', 'Preparando para gerar jogos...', 'info');
+    showDotsLoader('loader-geracao', 'Inicializando');
+    
+    status.style.display = 'none'; // Usar o novo sistema
     progress.innerHTML = ''; // Limpa progresso anterior
     progress.style.display = 'block';
-    loader.style.display = 'block';
 
     try {
         const startTime = performance.now();
@@ -229,14 +342,18 @@ async function handleGenerateGamesClick() {
             const checkedItems = document.querySelectorAll('#generation-file-list .file-item-analise-wrapper input[type="checkbox"]:checked');
             config.nomeArquivoAproveitado = ''; // Limpa para construir a nova lista de nomes
 
-            for (const checkbox of checkedItems) {
-                const wrapper = checkbox.closest('.file-item-analise-wrapper');
-                
-                // Adicionado: Pular itens que não estão visíveis (filtrados por tipo de jogo)
-                if (wrapper.style.display === 'none') {
-                    continue;
-                }
+            // Filtra para garantir que estamos olhando apenas para os itens visíveis (compatíveis com o tipo de jogo)
+            const visibleCheckedItems = Array.from(checkedItems).filter(cb => {
+                const wrapper = cb.closest('.file-item-analise-wrapper');
+                return wrapper && wrapper.style.display !== 'none';
+            });
 
+            if (visibleCheckedItems.length === 0) {
+                throw new Error('A opção "Aproveitar Jogos" está marcada, mas nenhum jogo (compatível com o tipo de jogo atual) foi selecionado na lista.');
+            }
+
+            for (const checkbox of visibleCheckedItems) {
+                const wrapper = checkbox.closest('.file-item-analise-wrapper');
                 const itemId = wrapper.dataset.itemId;
                 const gameData = window.managedGames[itemId];
 
@@ -252,6 +369,10 @@ async function handleGenerateGamesClick() {
                 }
             }
             config.jogosExistentes = gamesToProcess;
+
+            if (config.jogosExistentes.length === 0) {
+                throw new Error('Os arquivos selecionados para aproveitamento não continham jogos válidos.');
+            }
         }
 
         status.textContent = 'Validando configurações...';
@@ -329,6 +450,7 @@ async function handleGenerateGamesClick() {
 
         jogos.forEach((jogo, index) => {
             const custoJogo = tabelaCustos[jogo.length] || 0;
+            // Usar custo real sem aplicar ajustes de cotas
             if (index < jogosAproveitados) {
                 custoJogosAproveitados += custoJogo;
             } else {
@@ -346,6 +468,17 @@ async function handleGenerateGamesClick() {
             });
         }
         const dezenasDosJogosAproveitadosList = Array.from(dezenasDosJogosAproveitadosSet).sort((a, b) => a - b);
+
+        // Coletar informações de cotas
+        const calcularCotas = document.getElementById('calcularCotas')?.checked || false;
+        const quantidadeCotas = parseInt(document.getElementById('quantidadeCotas')?.value) || 1;
+        const cotasCompradas = parseInt(document.getElementById('cotasCompradas')?.value) || 1;
+        const pago35Caixa = document.getElementById('pago35Caixa')?.checked || false;
+        
+        // custoTotalCotas é o valor que o usuário vai pagar baseado nas suas cotas
+        const custoTotalCotas = calcularCotas ? 
+            custoTotal * (cotasCompradas / quantidadeCotas) : 
+            custoTotal;
 
         const reportData = {
             jogosSolicitados: config.quantidadeJogos,
@@ -368,6 +501,7 @@ async function handleGenerateGamesClick() {
                 peso: config.pesoFavoritas,
                 favoritas: config.dezenasFavoritas,
                 aproveitouJogos: config.aproveitaJogos,
+                incluirAproveitadosNoArquivo: config.incluirAproveitadosNoArquivo,
                 nomeArquivoAproveitado: config.nomeArquivoAproveitado || '',
                 totalJogosNoArquivo: config.jogosExistentes.length,
                 jogosAproveitadosInfo: { dezenas: dezenasDosJogosAproveitadosList },
@@ -381,6 +515,14 @@ async function handleGenerateGamesClick() {
             custoTotal: custoTotal,
             custoJogosAproveitados: custoJogosAproveitados,
             custoJogosNovos: custoJogosNovos,
+            // Informações de cotas
+            cotas: {
+                ativo: calcularCotas,
+                quantidadeCotas: quantidadeCotas,
+                cotasCompradas: cotasCompradas,
+                pago35Caixa: pago35Caixa,
+                custoTotalCotas: custoTotalCotas
+            },
             jogosEquivalentes: jogos.reduce((acc, jogo) => {
                 if (jogo.length > config.dezenasSimples) {
                     return acc + combinations(jogo, config.dezenasSimples).length;
@@ -434,6 +576,7 @@ async function handleGenerateGamesClick() {
         }
         reportSheetData.push(['Aproveitou Jogos', params.aproveitouJogos ? 'Sim' : 'Não']);
         if (params.aproveitouJogos) {
+            reportSheetData.push(['Incluiu Aproveitados no Arquivo', params.incluirAproveitadosNoArquivo ? 'Sim' : 'Não']);
             reportSheetData.push(['Validou Repetição (Aproveitados)', params.validouRepeticaoAproveitados ? 'Sim' : 'Não']);
             reportSheetData.push(['Validou Universo (Aproveitados)', params.validouUniversoAproveitados ? 'Sim' : 'Não']);
             reportSheetData.push(['Forçou usar universo dos jogos aproveitados', params.forcouUniversoAproveitados ? 'Sim' : 'Não']);
@@ -462,24 +605,36 @@ async function handleGenerateGamesClick() {
         wsFrequencia['!cols'] = [{ wch: 15 }, { wch: 20 }, { wch: 25 }];
         XLSX.utils.book_append_sheet(wb, wsFrequencia, 'Frequência das Bolas');
 
-        showGenerationReport(reportData, wb, nomeArquivo);
+        // Armazenar dados do relatório para acesso posterior
+        window.lastGenerationReport = { reportData, workbook: wb, filename: nomeArquivo };
+        
+        // Mostrar o botão para visualizar o relatório
+        const btnVisualizarRelatorio = document.getElementById('btn-visualizar-relatorio');
+        if (btnVisualizarRelatorio) {
+            btnVisualizarRelatorio.style.display = 'block';
+        }
 
         if (!window.stopGenerationRequested) {
-            status.textContent = `Concluído! Relatório de geração disponível.`;
+            showEnhancedNotification('status-geracao', 'Concluído! Relatório de geração disponível.', 'success', 5000);
         } else {
-            status.textContent = `Geração interrompida: ${jogos.length} jogos gerados! O download deve iniciar em breve.`;
+            showEnhancedNotification('status-geracao', `Geração interrompida: ${jogos.length} jogos gerados.`, 'warning');
         }
     } catch (error) {
         console.error('Erro ao gerar jogos:', error);
-        alert('Erro: ' + error.message);
-        status.textContent = 'Erro: ' + error.message;
-        status.classList.add('error');
+        showEnhancedNotification('status-geracao', 'Erro: ' + error.message, 'error');
     } finally {
+        // Remover estado de loading do botão
+        setButtonLoading('btn-gerar-jogos', false);
+        
         if (progressModal) progressModal.style.display = 'none';
         if (btnGerar) btnGerar.disabled = false;
         if (btnParar) {
             btnParar.onclick = null;
         }
+        
+        // Limpar loaders
+        const loader = document.getElementById('loader-geracao');
+        if (loader) loader.style.display = 'none';
     }
 }
 
@@ -572,8 +727,8 @@ function setupAnalysisChartControls() {
     const updateDistAxes = async () => {
         try {
             const chartsModule = await import('./charts.js');
-            if (chartsModule && chartsModule.updateDistChartAxes) {
-                chartsModule.updateDistChartAxes();
+            if (chartsModule && chartsModule.updateDistributionChartAxes) {
+                chartsModule.updateDistributionChartAxes();
             }
         } catch (error) {
             console.warn('Módulo de gráficos não disponível:', error);
@@ -584,9 +739,9 @@ function setupAnalysisChartControls() {
         distResetButton.addEventListener('click', async () => {
             try {
                 const chartsModule = await import('./charts.js');
-                if (chartsModule && chartsModule.resetDistAxisSliders && chartsModule.updateDistChartAxes) {
+                if (chartsModule && chartsModule.resetDistAxisSliders && chartsModule.updateDistributionChartAxes) {
                     chartsModule.resetDistAxisSliders();
-                    chartsModule.updateDistChartAxes();
+                    chartsModule.updateDistributionChartAxes();
                 }
             } catch (error) {
                 console.warn('Módulo de gráficos não disponível:', error);
@@ -603,7 +758,57 @@ function setupAnalysisChartControls() {
         const input = document.getElementById(inputId);
         if (input) {
             input.addEventListener('blur', updateDistAxes);
-            input.addEventListener('keypress', e => { if (e.key === 'Enter') updateDistAxes(); });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    updateDistAxes();
+                }
+            });
+        }
+    });
+
+    // --- NOVOS Controles para o Gráfico de ROI ---
+    const roiResetButton = document.getElementById('roi-grafico-reset-eixos');
+    const roiUpdateButton = document.getElementById('roi-grafico-atualizar-eixos');
+
+    const updateRoiAxes = async () => {
+        try {
+            const chartsModule = await import('./charts.js');
+            if (chartsModule && chartsModule.updateRoiChartAxes) {
+                chartsModule.updateRoiChartAxes();
+            }
+        } catch (error) {
+            console.warn('Módulo de gráficos não disponível:', error);
+        }
+    };
+
+    if (roiResetButton) {
+        roiResetButton.addEventListener('click', async () => {
+            try {
+                const chartsModule = await import('./charts.js');
+                if (chartsModule && chartsModule.resetRoiAxisSliders && chartsModule.updateRoiChartAxes) {
+                    chartsModule.resetRoiAxisSliders();
+                    chartsModule.updateRoiChartAxes();
+                }
+            } catch (error) {
+                console.warn('Módulo de gráficos não disponível:', error);
+            }
+        });
+    }
+
+    if (roiUpdateButton) {
+        roiUpdateButton.addEventListener('click', updateRoiAxes);
+    }
+
+    const roiAxisInputs = ['roi-grafico-eixo-x-min', 'roi-grafico-eixo-x-max', 'roi-grafico-eixo-y-min', 'roi-grafico-eixo-y-max'];
+    roiAxisInputs.forEach(inputId => {
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.addEventListener('blur', updateRoiAxes);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    updateRoiAxes();
+                }
+            });
         }
     });
 
@@ -646,6 +851,10 @@ function deleteManagedGame(gameId) {
     if (window.managedGames[gameId]) {
         delete window.managedGames[gameId];
         document.querySelectorAll(`[data-item-id="${gameId}"]`).forEach(el => el.remove());
+        // Após remover, verifica se a lista ficou vazia para mostrar a mensagem de estado vazio
+        import('./interface.js').then(module => module.checkAndSetEmptyState());
+        // Atualiza os checkboxes de jogos externos
+        updateExternalGamesCheckboxes();
     }
 }
 
@@ -920,6 +1129,161 @@ function setupPdfConfigControls() {
             event.target.value = ''; // Reset input to allow loading the same file again
         });
     }
+}
+
+/**
+ * Configura os controles de cotas para jogos
+ * @function
+ * @returns {void}
+ */
+function setupCotasControls() {
+    const calcularCotasCheckbox = document.getElementById('calcularCotas');
+    const cotasOptions = document.getElementById('cotas-options');
+    const quantidadeCotasSelect = document.getElementById('quantidadeCotas');
+    const cotasCompradasSelect = document.getElementById('cotasCompradas');
+
+    if (!calcularCotasCheckbox || !cotasOptions) return;
+
+    // Controla visibilidade das opções de cotas
+    calcularCotasCheckbox.addEventListener('change', () => {
+        if (calcularCotasCheckbox.checked) {
+            cotasOptions.style.display = 'block';
+            updateCotasMaximas();
+        } else {
+            cotasOptions.style.display = 'none';
+        }
+    });
+
+    // Atualiza máximo de cotas compradas quando mudar quantidade total
+    if (quantidadeCotasSelect) {
+        quantidadeCotasSelect.addEventListener('change', () => {
+            updateCotasCompradas();
+        });
+    }
+
+    // Atualiza máximos de cotas quando mudar parâmetros do jogo
+    const dezenasJogadas = document.getElementById('dezenasJogadas');
+    const quantidadeJogos = document.getElementById('quantidadeJogos');
+    
+    if (dezenasJogadas) {
+        dezenasJogadas.addEventListener('change', () => {
+            if (calcularCotasCheckbox.checked) {
+                updateCotasMaximas();
+            }
+        });
+    }
+    
+    if (quantidadeJogos) {
+        quantidadeJogos.addEventListener('input', () => {
+            if (calcularCotasCheckbox.checked) {
+                updateCotasMaximas();
+            }
+        });
+    }
+
+    // Listeners para atualizar exibições de custo quando configurações mudarem
+    const pago35CaixaCheckbox = document.getElementById('pago35Caixa');
+    if (pago35CaixaCheckbox) {
+        pago35CaixaCheckbox.addEventListener('change', atualizarExibicoesCusto);
+    }
+    
+    if (cotasCompradasSelect) {
+        cotasCompradasSelect.addEventListener('change', atualizarExibicoesCusto);
+    }
+}
+
+/**
+ * Calcula e atualiza o número máximo de cotas permitidas
+ * baseado no número de jogos e dezenas por jogo
+ * @function
+ * @returns {void}
+ */
+function updateCotasMaximas() {
+    const quantidadeCotasSelect = document.getElementById('quantidadeCotas');
+    const dezenasJogadas = parseInt(document.getElementById('dezenasJogadas').value) || 6;
+    const quantidadeJogos = parseInt(document.getElementById('quantidadeJogos').value.replace(/\D/g, '')) || 1;
+    
+    if (!quantidadeCotasSelect) return;
+
+    // Cálculo baseado nas regras da Caixa para máximo de cotas
+    // Considerando custo total do jogo e limites por modalidade
+    const gameType = document.getElementById('gameTypeGlobal').value;
+    const tabelaCustos = GAME_COSTS[gameType] || {};
+    const custoUnitario = tabelaCustos[dezenasJogadas] || 1;
+    const custoTotal = custoUnitario * quantidadeJogos;
+    
+    // Máximo de cotas baseado no custo (exemplo: até R$ 10.000 por cota)
+    // e máximo absoluto de 100 cotas por jogo
+    const maxCotasPorCusto = Math.min(Math.floor(custoTotal / 50), 100); // Mínimo R$ 50 por cota
+    const maxCotas = Math.max(1, Math.min(maxCotasPorCusto, 100)); // Máximo 100 cotas
+    
+    // Limpa opções existentes
+    quantidadeCotasSelect.innerHTML = '';
+    
+    // Adiciona opções de 1 até o máximo calculado
+    for (let i = 1; i <= maxCotas; i++) {
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = `${i} cota${i > 1 ? 's' : ''}`;
+        quantidadeCotasSelect.appendChild(option);
+    }
+    
+    // Atualiza cotas compradas
+    updateCotasCompradas();
+}
+
+/**
+ * Atualiza as opções de cotas compradas baseado na quantidade total de cotas
+ * @function
+ * @returns {void}
+ */
+function updateCotasCompradas() {
+    const quantidadeCotasSelect = document.getElementById('quantidadeCotas');
+    const cotasCompradasSelect = document.getElementById('cotasCompradas');
+    
+    if (!quantidadeCotasSelect || !cotasCompradasSelect) return;
+    
+    const maxCotas = parseInt(quantidadeCotasSelect.value) || 1;
+    const cotasCompradasAtual = parseInt(cotasCompradasSelect.value) || 1;
+    
+    // Limpa opções existentes
+    cotasCompradasSelect.innerHTML = '';
+    
+    // Adiciona opções de 1 até o máximo de cotas
+    for (let i = 1; i <= maxCotas; i++) {
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = `${i} cota${i > 1 ? 's' : ''}`;
+        cotasCompradasSelect.appendChild(option);
+    }
+    
+    // Mantém seleção anterior se possível
+    if (cotasCompradasAtual <= maxCotas) {
+        cotasCompradasSelect.value = cotasCompradasAtual;
+    }
+}
+
+/**
+ * Função para recalcular exibições de custo na interface
+ * @function
+ * @returns {void}
+ */
+function atualizarExibicoesCusto() {
+    // Esta função pode ser chamada quando os parâmetros de cotas mudarem
+    // para atualizar todas as exibições de custo na interface
+    const elements = document.querySelectorAll('[data-custo-original]');
+    elements.forEach(element => {
+        const custoOriginal = parseFloat(element.dataset.custoOriginal) || 0;
+        const custoAjustado = calcularCustoComCotas(custoOriginal);
+        
+        // Atualiza o texto do elemento com o novo custo
+        if (element.textContent.includes('R$')) {
+            element.textContent = element.textContent.replace(
+                /R\$\s*[\d.,]+/,
+                formatBrazilianCurrency(custoAjustado)
+            );
+        }
+    });
 }
 
 /**

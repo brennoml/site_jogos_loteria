@@ -78,7 +78,12 @@ async function gerarJogosSemAcertosGarantidosRepetidos(config, progressCallback)
         await progressCallback({ statusText: 'Analisando jogos existentes...' });
         for (const jogoExistente of config.jogosExistentes) {
             if (window.stopGenerationRequested) break;
-            if (jogos.length >= quantidadeJogosAlvo) break;
+
+            // Se estamos incluindo jogos aproveitados no resultado, paramos quando o alvo for atingido.
+            // Se não estamos incluindo, processamos todos para extrair as combinações.
+            if (config.incluirAproveitadosNoArquivo && jogos.length >= quantidadeJogosAlvo) {
+                break;
+            }
 
             // Validação opcional: o jogo aproveitado deve conter apenas dezenas do universo selecionado na tela.
             if (config.validarUniversoJogosAproveitados) {
@@ -95,7 +100,7 @@ async function gerarJogosSemAcertosGarantidosRepetidos(config, progressCallback)
                 continue;
             }
 
-            let deveAdicionar = true;
+            let deveProcessar = true;
             // Validação opcional: o jogo aproveitado não pode repetir combinações de acertos já usadas.
             if (config.validarRepeticaoJogosAproveitados) {
                 const subconjuntos = getSubconjuntos(jogoExistente, config.acertosGarantidos);
@@ -108,22 +113,27 @@ async function gerarJogosSemAcertosGarantidosRepetidos(config, progressCallback)
                     }
                 }
                 if (temIntersecao) {
-                    deveAdicionar = false;
+                    deveProcessar = false;
                 }
             }
 
-            if (deveAdicionar) {
-                // Adiciona o jogo original, com sua quantidade de dezenas original.
-                // A função também atualiza 'combinacoesUsadas' para que os novos jogos respeitem este.
-                adicionarJogoEAtualizarEstruturas(jogoExistente.sort((a, b) => a - b));
-                jogosAproveitados++;
+            if (deveProcessar) {
+                if (!config.incluirAproveitadosNoArquivo) {
+                    // Apenas registra as combinações, não adiciona ao resultado final
+                    const subconjuntos = getSubconjuntos(jogoExistente, config.acertosGarantidos);
+                    subconjuntos.forEach(sub => combinacoesUsadas.add(sub));
+                } else {
+                    // Comportamento quando marcado: adiciona o jogo ao resultado final
+                    adicionarJogoEAtualizarEstruturas(jogoExistente.sort((a, b) => a - b));
+                    jogosAproveitados++;
+                }
             }
         }
         await progressCallback({
             elementId: 'progress-geracao',
             currentCount: jogos.length,
             totalCount: quantidadeJogosAlvo,
-            isAleatorio: config.jogosSorteados,
+            isAleatorio: config.algoritmo === 'aleatorio',
             progressPercent: 0,
             info: `Aproveitados: ${jogosAproveitados}`,
             countLabel: "Gerados"

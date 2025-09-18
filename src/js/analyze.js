@@ -1,6 +1,6 @@
 import { combinations, randomChoice, formatBrazilianCurrency, formatBrazilianPercentage, combinationsCount, updateProgress, calculatePrizeCountsForGames } from './utils.js';
 import { parseBrazilianNumber } from './validators.js';
-import { PRIZE_DEFAULTS } from './constants.js';
+import { PRIZE_DEFAULTS, GAME_COSTS } from './constants.js';
 
 // Global map to hold chart instances, to prevent memory leaks
 window.pieCharts = window.pieCharts || {};
@@ -533,10 +533,18 @@ async function executeAnalysis() {
             const inputEl = document.getElementById(tier.inputId);
             premios[tier.key] = parseBrazilianNumber(inputEl?.value) || PRIZE_DEFAULTS[tipoJogo][tier.key];
         });
-        const custoAposta = parseBrazilianNumber(document.getElementById(gameConfig.costInputId)?.value) || PRIZE_DEFAULTS[tipoJogo].custoAposta;
+        const custoApostaBase = parseBrazilianNumber(document.getElementById(gameConfig.costInputId)?.value) || PRIZE_DEFAULTS[tipoJogo].custoAposta;
+        
+        // Não usar calcularCustoComCotas globalmente, vamos calcular para cada jogo individualmente
 
         progress.textContent = 'Calculando resultados...';
         const resultados = [];
+
+        // Estruturas para armazenar prêmios individuais por arquivo
+        const resultadosIndividuais = {};
+        allUserGamesData.forEach(fileData => {
+            resultadosIndividuais[fileData.fileName] = [];
+        });
 
         // Estruturas para armazenar estatísticas agregadas
         const pieChartCountsByFile = {};
@@ -593,26 +601,67 @@ async function executeAnalysis() {
 
             let bestOverallTierInSim = null;
             const bestTierByFileInSim = {};
+            let premioTotalNesteSorteio = 0, premioSemMaximoNesteSorteio = 0;
 
-            // Itera sobre os jogos ORIGINAIS para calcular os prêmios para o Excel
-            // e determinar o melhor prêmio por simulação para os gráficos de pizza.
+            // Itera sobre os jogos para calcular prêmios e estatísticas
             allUserGamesData.forEach(fileData => {
                 const prizeCountsForFile = calculatePrizeCountsForGames(fileData.originalGames, Array.from(numerosHistoricos), gameConfig);
+                
+                // Encontrar informações de cotas específicas deste jogo
+                const gameId = Object.keys(window.managedGames).find(id => 
+                    window.managedGames[id].name === fileData.fileName
+                );
+                const gameData = gameId ? window.managedGames[gameId] : null;
                 
                 let bestTierForThisFile = null;
                 const sortedTiers = [...gameConfig.prizeTiers].sort((a, b) => b.hits - a.hits);
 
-                for (const tier of sortedTiers) {
-                    if (prizeCountsForFile[tier.key] > 0) {
-                        // Acumula para o relatório Excel
-                        premiosNesteSorteio[tier.key] += prizeCountsForFile[tier.key];
+                // Contadores de prêmios individuais para ESTE arquivo e sorteio
+                const premiosIndividuaisNesteSorteio = {};
+                gameConfig.prizeTiers.forEach(tier => { premiosIndividuaisNesteSorteio[tier.key] = 0; });
+                let premioTotalIndividualNesteSorteio = 0;
+
+                // Calcular prêmios para cada categoria
+                gameConfig.prizeTiers.forEach(tier => {
+                    const count = prizeCountsForFile[tier.key] || 0;
+                    
+                    // Armazenar contadores individuais
+                    premiosIndividuaisNesteSorteio[tier.key] = count;
+                    
+                    if (count > 0) {
+                        // Calcular prêmio ajustado para cotas
+                        let premioAjustado = premios[tier.key];
+                        if (gameData && gameData.quotaInfo && gameData.quotaInfo.ativo) {
+                            const proporcaoCotas = gameData.quotaInfo.cotasCompradas / gameData.quotaInfo.quantidadeCotas;
+                            premioAjustado = premios[tier.key] * proporcaoCotas;
+                        }
                         
-                        // Encontra o melhor prêmio para este arquivo para o gráfico de pizza
+                        // Acumula valores monetários individuais
+                        premioTotalIndividualNesteSorteio += count * premioAjustado;
+                        
+                        // Acumula para contadores (para Excel)
+                        premiosNesteSorteio[tier.key] += count;
+                        
+                        // Acumula valores monetários (para estatísticas)
+                        premioTotalNesteSorteio += count * premioAjustado;
+                        if (!tier.isMaxPrize) {
+                            premioSemMaximoNesteSorteio += count * premioAjustado;
+                        }
+                        
+                        // Encontra o melhor prêmio para este arquivo (para gráfico de pizza)
                         if (!bestTierForThisFile) {
                             bestTierForThisFile = tier;
                         }
                     }
-                }
+                });
+
+                // Armazenar linha individual para este arquivo
+                const linhaIndividual = [
+                    jogoHistorico[0], // Concurso
+                    ...gameConfig.prizeTiers.map(tier => premiosIndividuaisNesteSorteio[tier.key]),
+                    premioTotalIndividualNesteSorteio
+                ];
+                resultadosIndividuais[fileData.fileName].push(linhaIndividual);
 
                 bestTierByFileInSim[fileData.fileName] = bestTierForThisFile;
 
@@ -622,7 +671,7 @@ async function executeAnalysis() {
                 }
             });
  
-            // Atualiza os contadores para os gráficos de pizza com base no resultado da SIMULAÇÃO
+            // Atualiza contadores para gráficos de pizza
             if (bestOverallTierInSim) {
                 totalPieChartCounts[bestOverallTierInSim.key]++;
             } else {
@@ -638,18 +687,10 @@ async function executeAnalysis() {
                 }
             });
 
-            // Acumula os resultados deste sorteio nas estatísticas globais
-            let premioTotalNesteSorteio = 0, premioSemMaximoNesteSorteio = 0;
+            // Atualiza estatísticas baseadas nos contadores
             gameConfig.prizeTiers.forEach(tier => {
                 const count = premiosNesteSorteio[tier.key];
-                const value = premios[tier.key];
                 
-                // Acumula valor total do prêmio
-                premioTotalNesteSorteio += count * value;
-                if (!tier.isMaxPrize) {
-                    premioSemMaximoNesteSorteio += count * value;
-                }
-
                 // Atualiza min/max de acertos por sorteio
                 minMaxAcertos[tier.key].min = Math.min(minMaxAcertos[tier.key].min, count);
                 minMaxAcertos[tier.key].max = Math.max(minMaxAcertos[tier.key].max, count);
@@ -659,7 +700,7 @@ async function executeAnalysis() {
                     totaisSorteiosSemPremio[tier.key]++;
                 }
 
-                // Registra a frequência de prêmios (ex: 5 sorteios tiveram 2 quadras)
+                // Registra a frequência de prêmios
                 frequenciaPremiosPorSorteio[tier.key][count] = (frequenciaPremiosPorSorteio[tier.key][count] || 0) + 1;
             });
 
@@ -742,7 +783,32 @@ async function executeAnalysis() {
 
         const mediaPremioPorSorteio = numeroJogosHistoricos > 0 ? totalPremio / numeroJogosHistoricos : 0;
         const mediaPremioSemMaximoPorSorteio = numeroJogosHistoricos > 0 ? totalPremioSemMaximo / numeroJogosHistoricos : 0;
-        const custoTotalDasApostasPorSorteio = numeroApostasUsuario * custoAposta;
+        
+        // Calcular custo total considerando as cotas específicas de cada jogo
+        let custoTotalDasApostasPorSorteio = 0;
+        allUserGamesData.forEach(fileData => {
+            const gameId = Object.keys(window.managedGames).find(id => 
+                window.managedGames[id].name === fileData.fileName
+            );
+            const gameData = gameId ? window.managedGames[gameId] : null;
+            
+            // Calcular custo específico para este jogo
+            let custoJogo = custoApostaBase;
+            if (gameData && gameData.quotaInfo && gameData.quotaInfo.ativo) {
+                // Para jogos com cotas, usar a proporção das cotas compradas
+                const proporcaoCotas = gameData.quotaInfo.cotasCompradas / gameData.quotaInfo.quantidadeCotas;
+                custoJogo = custoApostaBase * proporcaoCotas;
+                
+                // Se pago 35% antecipado, multiplicar por 1.35
+                if (gameData.quotaInfo.pago35Caixa) {
+                    custoJogo *= 1.35;
+                }
+            }
+            
+            // Contar quantos jogos expandidos pertencem a este arquivo
+            const jogosDesteArquivo = jogosUsuarioExpandidos.filter(jogo => jogo.file === fileData.fileName).length;
+            custoTotalDasApostasPorSorteio += jogosDesteArquivo * custoJogo;
+        });
 
         // Calcular distribuição de prêmios vs custo
         if (custoTotalDasApostasPorSorteio > 0 && numeroJogosHistoricos > 0) {
@@ -770,10 +836,10 @@ async function executeAnalysis() {
         const roiTotal = custoTotalDasApostasPorSorteio > 0 ? mediaPremioPorSorteio / custoTotalDasApostasPorSorteio : 0;
         const roiSemMaximo = custoTotalDasApostasPorSorteio > 0 ? mediaPremioSemMaximoPorSorteio / custoTotalDasApostasPorSorteio : 0;
 
-        // Calcula a média de prêmios por sorteio para cada faixa
+        // Calcula a média de prêmios por sorteio para cada faixa baseada nos prêmios reais ganhos
         const mediasPremios = {};
         gameConfig.prizeTiers.forEach(tier => {
-            mediasPremios[tier.key] = numeroJogosHistoricos > 0 ? Object.values(premios).reduce((sum, val) => sum + val, 0) / numeroJogosHistoricos : 0; // This needs re-evaluation based on total prizes won
+            mediasPremios[tier.key] = numeroJogosHistoricos > 0 ? totalPremio / numeroJogosHistoricos : 0;
         });
 
         // Calcular totais de agrupamentos repetidos no jogo do usuário
@@ -841,7 +907,37 @@ async function executeAnalysis() {
 
             // Render summary chart if more than one file was analyzed
             if (Object.keys(pieChartCountsByFile).length > 1) {
-                renderChartForData(totalPieChartCounts, 'Resumo de Todos os Jogos');
+                // Calcular custo total de todos os jogos usando informações específicas de cotas
+                let custoTotalTodosJogos = 0;
+                const tabelaCustos = GAME_COSTS[tipoJogo] || {};
+                
+                allUserGamesData.forEach(fileData => {
+                    // Buscar informações de cotas específicas deste jogo
+                    const gameId = Object.keys(window.managedGames).find(id => 
+                        window.managedGames[id].name === fileData.fileName
+                    );
+                    const gameData = gameId ? window.managedGames[gameId] : null;
+                    
+                    fileData.originalGames.forEach(jogo => {
+                        const custoJogoBase = tabelaCustos[jogo.length] || 0;
+                        
+                        // Calcular custo ajustado usando informações específicas do jogo
+                        let custoJogoAjustado = custoJogoBase;
+                        if (gameData && gameData.quotaInfo && gameData.quotaInfo.ativo) {
+                            const proporcaoCotas = gameData.quotaInfo.cotasCompradas / gameData.quotaInfo.quantidadeCotas;
+                            custoJogoAjustado = custoJogoBase * proporcaoCotas;
+                            
+                            if (gameData.quotaInfo.pago35Caixa) {
+                                custoJogoAjustado *= 1.35;
+                            }
+                        }
+                        
+                        custoTotalTodosJogos += custoJogoAjustado;
+                    });
+                });
+
+                const tituloComCusto = `Todos os Jogos (Custo: ${formatBrazilianCurrency(custoTotalTodosJogos)})`;
+                renderChartForData(totalPieChartCounts, tituloComCusto);
             }
         }
         // --- END PIE CHARTS RENDERING LOGIC ---
@@ -871,7 +967,7 @@ async function executeAnalysis() {
                 ['Quantidade dos Meus Jogos (Simples)', numeroApostasUsuario],
                 ['Quantidade de Sorteios Históricos Analisados', numeroJogosHistoricos],
                 ['Custo Total das Minhas Apostas (por sorteio)', custoTotalDasApostasPorSorteio],
-                ['Custo de uma Aposta Simples', custoAposta],
+                ['Custo de uma Aposta Simples', custoApostaBase],
                 ['Bolas Utilizadas nos Meus Jogos (após expansão)', stringDezenasUnicasUsuario],
                 ['Média de Prêmios de Duque por Sorteio', mediasPremios.duque],
                 ['Média de Prêmios de Terno por Sorteio', mediasPremios.terno],
@@ -912,7 +1008,7 @@ async function executeAnalysis() {
                 ['Quantidade dos Meus Jogos (Simples)', numeroApostasUsuario],
                 ['Quantidade de Sorteios Históricos Analisados', numeroJogosHistoricos],
                 ['Custo Total das Minhas Apostas (por sorteio)', custoTotalDasApostasPorSorteio],
-                ['Custo de uma Aposta Simples', custoAposta],
+                ['Custo de uma Aposta Simples', custoApostaBase],
                 ['Bolas Utilizadas nos Meus Jogos (após expansão)', stringDezenasUnicasUsuario],
                 ['Média de Prêmios de 11 Acertos por Sorteio', mediasPremios.onze],
                 ['Média de Prêmios de 12 Acertos por Sorteio', mediasPremios.doze],
@@ -961,7 +1057,7 @@ async function executeAnalysis() {
                 ['Quantidade dos Meus Jogos (Simples)', numeroApostasUsuario],
                 ['Quantidade de Sorteios Históricos Analisados', numeroJogosHistoricos],
                 ['Custo Total das Minhas Apostas (por sorteio)', custoTotalDasApostasPorSorteio],
-                ['Custo de uma Aposta Simples', custoAposta],
+                ['Custo de uma Aposta Simples', custoApostaBase],
                 ['Bolas Utilizadas nos Meus Jogos (após expansão)', stringDezenasUnicasUsuario],
                 ['Média de Prêmios de Quadra por Sorteio', mediasPremios.quadra],
                 ['Média de Prêmios de Quina por Sorteio', mediasPremios.quina],
@@ -1031,6 +1127,39 @@ async function executeAnalysis() {
             }
         }
         XLSX.utils.book_append_sheet(wb, planilhaDetalhado, 'Prêmios por Sorteio');
+
+        // Cria abas individuais de "Prêmios por Sorteio" para cada arquivo
+        allUserGamesData.forEach(fileData => {
+            const dadosIndividuais = [
+                ['Sorteio Histórico', ...prizeHeaders, 'Valor Total de Prêmio no Sorteio']
+            ].concat(resultadosIndividuais[fileData.fileName]);
+
+            const planilhaIndividual = XLSX.utils.aoa_to_sheet(dadosIndividuais);
+
+            // Formata as células da aba individual
+            planilhaIndividual['!cols'] = colWidthsDetalhado;
+
+            for (let r = 1; r < dadosIndividuais.length; r++) { 
+                for (let c = 0; c < dadosIndividuais[0].length; c++) { 
+                    const cellRef = XLSX.utils.encode_cell({r: r, c: c});
+                    if (!planilhaIndividual[cellRef] || planilhaIndividual[cellRef].v === undefined || planilhaIndividual[cellRef].v === null) continue;
+                    
+                    planilhaIndividual[cellRef].t = 'n'; // Todos os dados aqui são numéricos
+                    if (c === premioColIndex) {
+                        planilhaIndividual[cellRef].z = 'R$ #,##0.00'; 
+                    } else if (c > 0) { 
+                        planilhaIndividual[cellRef].z = '#,##0';
+                    } else { // Coluna do Sorteio Histórico (Concurso)
+                        planilhaIndividual[cellRef].z = '0'; 
+                    }
+                }
+            }
+
+            // Cria um nome de aba válido e único para prêmios
+            let sheetNamePremios = `Prêmios_${fileData.fileName.replace(/\.xlsx$/i, '').replace(/[\/\\?*\[\]]/g, '')}`;
+            sheetNamePremios = sheetNamePremios.substring(0, 31);
+            XLSX.utils.book_append_sheet(wb, planilhaIndividual, sheetNamePremios);
+        });
 
         // Cria uma aba para cada arquivo de jogo original do usuário
         allUserGamesData.forEach(fileData => {

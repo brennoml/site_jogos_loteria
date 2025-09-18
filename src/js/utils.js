@@ -399,4 +399,31 @@ function calculatePrizesForGames(userGames, drawNumbers, gameConfig, prizeValues
     return totalPrize;
 }
 
-export { combinations, randomChoice, getSubconjuntos, jogosJaGerados, formatBrazilianCurrency, formatBrazilianPercentage, updateProgress, combinationsCount, combinationsGenerator, calculateInternalRepetitions, calculatePrizeCountsForGames, calculatePrizesForGames };
+/**
+ * Calcula o custo ajustado considerando cotas e taxa de 35%
+ * @param {number} custoOriginal - Custo original do jogo
+ * @returns {number} Custo ajustado com cotas e taxa
+ */
+function calcularCustoComCotas(custoOriginal) {
+    const calcularCotasCheckbox = document.getElementById('calcularCotas');
+    
+    if (!calcularCotasCheckbox || !calcularCotasCheckbox.checked) {
+        return custoOriginal;
+    }
+    
+    const quantidadeCotas = parseInt(document.getElementById('quantidadeCotas')?.value) || 1;
+    const cotasCompradas = parseInt(document.getElementById('cotasCompradas')?.value) || 1;
+    const pago35Caixa = document.getElementById('pago35Caixa')?.checked || false;
+    
+    // Calcula custo proporcional às cotas compradas
+    let custoAjustado = custoOriginal * (cotasCompradas / quantidadeCotas);
+    
+    // Adiciona taxa de 35% se marcado
+    if (pago35Caixa) {
+        custoAjustado *= 1.35;
+    }
+    
+    return custoAjustado;
+}
+
+export { combinations, randomChoice, getSubconjuntos, jogosJaGerados, formatBrazilianCurrency, formatBrazilianPercentage, updateProgress, combinationsCount, combinationsGenerator, calculateInternalRepetitions, calculatePrizeCountsForGames, calculatePrizesForGames, calcularCustoComCotas };
