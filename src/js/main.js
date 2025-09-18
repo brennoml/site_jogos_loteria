@@ -5,6 +5,7 @@ import { generateVolantePDF, coletarConfiguracoesImpressao, aplicarConfiguracoes
 import { validateGameConfig, parseBrazilianNumber, validateAndGetFileInfo } from './validators.js';
 import { updateProgress, jogosJaGerados, combinations, formatBrazilianCurrency, calcularCustoComCotas } from './utils.js';
 import { GAME_DEFAULTS, GAME_COSTS } from './constants.js';
+import { updateCotasMaximas, updateCotasCompradas, atualizarExibicoesCusto, getBasicGenerationConfig, setupPrintControls } from './config.js';
 
 /**
  * Inicializa a aplicação LotoPro - Sistema Profissional de Análise de Loterias.
@@ -324,9 +325,7 @@ async function handleGenerateGamesClick() {
 
     try {
         const startTime = performance.now();
-        const config = _getGenerationConfig();
-
-        const algoritmoDisplayMap = {
+            const config = _getGenerationConfig();        const algoritmoDisplayMap = {
             aleatorio: 'Aleatório',
             combinatorio_sequencial: 'Combinatória em Sequência',
             combinatorio_aleatorio: 'Combinatória Aleatória'
@@ -1037,38 +1036,6 @@ function setupTabControls() {
 }
 
 /**
- * Configura controles específicos para geração de PDFs.
- * Gerencia habilitação/desabilitação de imagem de fundo.
- * @function setupPrintControls
- * @returns {void}
- */
-function setupPrintControls() {
-    // Controle para habilitar/desabilitar imagem de fundo no PDF
-    const backgroundCheckbox = document.getElementById('pdfPrintBackgroundImage');
-    const backgroundFileInput = document.getElementById('pdfBackgroundImageFile');
-    
-    if (backgroundCheckbox && backgroundFileInput) {
-        backgroundCheckbox.addEventListener('change', function() {
-            backgroundFileInput.disabled = !this.checked;
-            if (!this.checked) {
-                backgroundFileInput.value = '';
-                const display = document.getElementById('pdfBackgroundImageFileName');
-                if (display) display.textContent = '';
-            }
-        });
-    }
-
-    // NEW: Control for grid lines
-    const gridCheckbox = document.getElementById('pdfShowGridLines');
-    const gridOptions = document.getElementById('grid-lines-options');
-    if (gridCheckbox && gridOptions) {
-        gridCheckbox.addEventListener('change', function() {
-            gridOptions.style.display = this.checked ? 'block' : 'none';
-        });
-    }
-}
-
-/**
  * Configura os controles para salvar e carregar configurações de impressão PDF.
  * @function setupPdfConfigControls
  * @returns {void}
@@ -1190,100 +1157,6 @@ function setupCotasControls() {
     if (cotasCompradasSelect) {
         cotasCompradasSelect.addEventListener('change', atualizarExibicoesCusto);
     }
-}
-
-/**
- * Calcula e atualiza o número máximo de cotas permitidas
- * baseado no número de jogos e dezenas por jogo
- * @function
- * @returns {void}
- */
-function updateCotasMaximas() {
-    const quantidadeCotasSelect = document.getElementById('quantidadeCotas');
-    const dezenasJogadas = parseInt(document.getElementById('dezenasJogadas').value) || 6;
-    const quantidadeJogos = parseInt(document.getElementById('quantidadeJogos').value.replace(/\D/g, '')) || 1;
-    
-    if (!quantidadeCotasSelect) return;
-
-    // Cálculo baseado nas regras da Caixa para máximo de cotas
-    // Considerando custo total do jogo e limites por modalidade
-    const gameType = document.getElementById('gameTypeGlobal').value;
-    const tabelaCustos = GAME_COSTS[gameType] || {};
-    const custoUnitario = tabelaCustos[dezenasJogadas] || 1;
-    const custoTotal = custoUnitario * quantidadeJogos;
-    
-    // Máximo de cotas baseado no custo (exemplo: até R$ 10.000 por cota)
-    // e máximo absoluto de 100 cotas por jogo
-    const maxCotasPorCusto = Math.min(Math.floor(custoTotal / 50), 100); // Mínimo R$ 50 por cota
-    const maxCotas = Math.max(1, Math.min(maxCotasPorCusto, 100)); // Máximo 100 cotas
-    
-    // Limpa opções existentes
-    quantidadeCotasSelect.innerHTML = '';
-    
-    // Adiciona opções de 1 até o máximo calculado
-    for (let i = 1; i <= maxCotas; i++) {
-        const option = document.createElement('option');
-        option.value = i;
-        option.textContent = `${i} cota${i > 1 ? 's' : ''}`;
-        quantidadeCotasSelect.appendChild(option);
-    }
-    
-    // Atualiza cotas compradas
-    updateCotasCompradas();
-}
-
-/**
- * Atualiza as opções de cotas compradas baseado na quantidade total de cotas
- * @function
- * @returns {void}
- */
-function updateCotasCompradas() {
-    const quantidadeCotasSelect = document.getElementById('quantidadeCotas');
-    const cotasCompradasSelect = document.getElementById('cotasCompradas');
-    
-    if (!quantidadeCotasSelect || !cotasCompradasSelect) return;
-    
-    const maxCotas = parseInt(quantidadeCotasSelect.value) || 1;
-    const cotasCompradasAtual = parseInt(cotasCompradasSelect.value) || 1;
-    
-    // Limpa opções existentes
-    cotasCompradasSelect.innerHTML = '';
-    
-    // Adiciona opções de 1 até o máximo de cotas
-    for (let i = 1; i <= maxCotas; i++) {
-        const option = document.createElement('option');
-        option.value = i;
-        option.textContent = `${i} cota${i > 1 ? 's' : ''}`;
-        cotasCompradasSelect.appendChild(option);
-    }
-    
-    // Mantém seleção anterior se possível
-    if (cotasCompradasAtual <= maxCotas) {
-        cotasCompradasSelect.value = cotasCompradasAtual;
-    }
-}
-
-/**
- * Função para recalcular exibições de custo na interface
- * @function
- * @returns {void}
- */
-function atualizarExibicoesCusto() {
-    // Esta função pode ser chamada quando os parâmetros de cotas mudarem
-    // para atualizar todas as exibições de custo na interface
-    const elements = document.querySelectorAll('[data-custo-original]');
-    elements.forEach(element => {
-        const custoOriginal = parseFloat(element.dataset.custoOriginal) || 0;
-        const custoAjustado = calcularCustoComCotas(custoOriginal);
-        
-        // Atualiza o texto do elemento com o novo custo
-        if (element.textContent.includes('R$')) {
-            element.textContent = element.textContent.replace(
-                /R\$\s*[\d.,]+/,
-                formatBrazilianCurrency(custoAjustado)
-            );
-        }
-    });
 }
 
 /**

@@ -307,43 +307,6 @@ function renderPrizeDistributionChart(containerElement, chartData, title) {
 }
 
 /**
- * Calculates internal repetitions of combinations within a set of games.
- * @param {Array<Array<number>>} games - The list of games to analyze.
- * @param {object} gameConfig - The configuration for the game type.
- * @returns {object} An object with counts of repeated combinations (e.g., { quadras: 10, quinas: 2 }).
- */
-export function calculateInternalRepetitions(games, gameConfig) {
-    const repetitions = {};
-    const combinationCounts = {};
-
-    gameConfig.prizeTiers.forEach(tier => {
-        combinationCounts[tier.key] = {};
-        repetitions[tier.key] = 0;
-    });
-
-    games.forEach(game => {
-        gameConfig.prizeTiers.forEach(tier => {
-            if (game.length >= tier.hits) {
-                const combos = combinations(game, tier.hits);
-                combos.forEach(combo => {
-                    const key = JSON.stringify(combo);
-                    combinationCounts[tier.key][key] = (combinationCounts[tier.key][key] || 0) + 1;
-                });
-            }
-        });
-    });
-
-    for (const tierKey in combinationCounts) {
-        for (const comboKey in combinationCounts[tierKey]) {
-            if (combinationCounts[tierKey][comboKey] > 1) {
-                repetitions[tierKey]++;
-            }
-        }
-    }
-    return repetitions;
-}
-
-/**
  * Função principal que orquestra a análise dos jogos do usuário contra o histórico de sorteios.
  * 
  * FLUXO DE TRABALHO:

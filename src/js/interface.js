@@ -1,9 +1,8 @@
 import { GAME_DEFAULTS } from './constants.js';
 import { generateReportPDF, generateReportWithGamesPDF } from './reportPdf.js';
 import { aplicarConfiguracoesImpressao } from './printPdf.js';
-import { combinationsCount, calculateInternalRepetitions } from './utils.js';
+import { combinationsCount, calculateInternalRepetitions, formatCurrency } from './utils.js';
 import { validateAndGetFileInfo } from './validators.js';
-import { formatCurrency } from './charts.js';
 
 /**
  * Inicializa a interface do usuário do LotoPro.
@@ -742,6 +741,17 @@ function handleGlobalGameTypeChange() {
         setGenerationDefaults(selectedGame);
         filterAndRefreshManagedGamesList(selectedGame);
         createSimulationBallPanel(selectedGame);
+
+        // Atualizar cotas máximas quando o tipo de jogo mudar
+        const calcularCotasCheckbox = document.getElementById('calcularCotas');
+        if (calcularCotasCheckbox && calcularCotasCheckbox.checked) {
+            // Importar e chamar updateCotasMaximas do config.js
+            import('./config.js').then(configModule => {
+                configModule.updateCotasMaximas();
+            }).catch(error => {
+                console.error('Erro ao carregar módulo config:', error);
+            });
+        }
 
         // Após definir os padrões hardcoded, tenta carregar a configuração
         // padrão salva pelo usuário para este tipo de jogo.

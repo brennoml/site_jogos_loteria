@@ -426,4 +426,16 @@ function calcularCustoComCotas(custoOriginal) {
     return custoAjustado;
 }
 
-export { combinations, randomChoice, getSubconjuntos, jogosJaGerados, formatBrazilianCurrency, formatBrazilianPercentage, updateProgress, combinationsCount, combinationsGenerator, calculateInternalRepetitions, calculatePrizeCountsForGames, calculatePrizesForGames, calcularCustoComCotas };
+/**
+ * Formats a monetary value for display.
+ * @param {number} value - The value to format.
+ * @returns {string} The formatted currency string.
+ */
+function formatCurrency(value) {
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+    }).format(value);
+}
+
+export { combinations, randomChoice, getSubconjuntos, jogosJaGerados, formatBrazilianCurrency, formatBrazilianPercentage, updateProgress, combinationsCount, combinationsGenerator, calculateInternalRepetitions, calculatePrizeCountsForGames, calculatePrizesForGames, calcularCustoComCotas, formatCurrency };

@@ -1,5 +1,5 @@
 import { parseBrazilianNumber } from './validators.js';
-import { combinations, randomChoice, formatBrazilianCurrency, formatBrazilianPercentage, combinationsCount, updateProgress, calculatePrizeCountsForGames, calculatePrizesForGames } from './utils.js';
+import { combinations, randomChoice, formatBrazilianCurrency, formatBrazilianPercentage, combinationsCount, updateProgress, calculatePrizeCountsForGames, calculatePrizesForGames, formatCurrency } from './utils.js';
 import { PRIZE_DEFAULTS, GAME_COSTS } from './constants.js';
 import { GAME_ANALYSIS_CONFIG } from './analyze.js';
 import { validateAndGetFileInfo } from './validators.js';
@@ -760,16 +760,6 @@ function printChartToPDF() {
         console.error('Erro ao imprimir gráfico em PDF:', error);
         alert('Erro ao imprimir gráfico: ' + error.message);
     }
-}
-
-/**
- * Formata um valor como moeda brasileira.
- */
-export function formatCurrency(value) {
-    return new Intl.NumberFormat('pt-BR', {
-        style: 'currency',
-        currency: 'BRL'
-    }).format(value || 0);
 }
 
 /**
